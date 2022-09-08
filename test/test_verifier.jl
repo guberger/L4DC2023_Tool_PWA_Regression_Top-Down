@@ -1,4 +1,6 @@
 using LinearAlgebra
+using JuMP
+using HiGHS
 using Test
 @static if isdefined(Main, :TestLocal)
     include("../src/PWARegression.jl")
@@ -6,6 +8,10 @@ else
     using PWARegression
 end
 PWAR = PWARegression
+
+solver() = Model(optimizer_with_attributes(
+    HiGHS.Optimizer, "output_flag"=>false
+))
 
 NT = PWAR.Node{Vector{Float64},Vector{Float64}}
 graph = PWAR.Graph(NT[])
@@ -22,23 +28,25 @@ PWAR.add_node!(graph, PWAR.Node(x, Aref*x .- 1.0))
 PWAR.add_node!(graph, PWAR.Node([5.0, 5.0, 1.0], [100.0]))
 PWAR.add_node!(graph, PWAR.Node([-5.0, -5.0, 1.0], [100.0]))
 
-@testset "length graph" begin
-    @test length(graph) == 125
+subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-4))
+r1 = PWAR.verify(subgraph, 1000, 3, 1, solver)
+r2 = PWAR.verify(subgraph, 0, 3, 1, solver)
+
+@testset "verify no error / small arad" begin
+    @test r1 ≈ 0
+    @test r2 ≈ 6
 end
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-2))
-xc = [1.1, -0.2, 1.0]
-σ = 0.1
-A, res, ω_tot = PWAR.generate(subgraph, xc, σ, 3, 1)
+r = PWAR.verify(subgraph, 1000, 3, 1, solver)
 
-@testset "generate" begin
-    @test res/ω_tot^2 < 1e-3
+@testset "verify small error" begin
+    @test r ≈ 1/2
 end
 
-x = [-0.1, 2.2, 1.0]
-σ = 0.05
-A, res, ω_tot = PWAR.generate(subgraph, xc, σ, 3, 1)
+subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
+r = PWAR.verify(subgraph, 1000, 3, 1, solver)
 
-@testset "generate" begin
-    @test res/ω_tot^2 < 1e-6
+@testset "verify big error" begin
+    @test r ≈ 99/2
 end

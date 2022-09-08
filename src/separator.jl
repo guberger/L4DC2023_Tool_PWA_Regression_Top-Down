@@ -1,10 +1,10 @@
-function generate(subgraph::Subgraph, xc, σ, nx, ny)
+function local_residual(subgraph::Subgraph, xc, σ, nx, ny)
     M = fill(NaN, nx, length(subgraph))
     N = fill(NaN, ny, length(subgraph))
     ω_tot = 0.0
     for (t, inode) in enumerate(subgraph.inodes)
         ρ = norm(subgraph.graph.nodes[inode].x - xc)
-        ω = exp(-ρ/σ)
+        ω = exp(-((ρ/σ)^2)/2)
         for k in 1:nx
             M[k, t] = subgraph.graph.nodes[inode].x[k]*ω
         end
@@ -21,4 +21,18 @@ function generate(subgraph::Subgraph, xc, σ, nx, ny)
         A = (N*M') / (M*M' + 1e-6*I)
         return A, norm(A*M - N)^2, ω_tot
     end    
+end
+
+function max_local_residual(subgraph::Subgraph, σ, nx, ny)
+    res_max = -Inf
+    inode_opt = 0
+    for inode in subgraph.inodes
+        xc = subgraph.graph.nodes[inode].x
+        res = local_residual(subgraph, xc, σ, nx, ny)[2]
+        if res > res_max
+            res_max = res
+            inode_opt = inode
+        end
+    end
+    return res_max, inode_opt    
 end

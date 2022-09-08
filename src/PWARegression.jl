@@ -1,6 +1,7 @@
 module PWARegression
 
 using LinearAlgebra
+using JuMP
 
 struct Node{VTX<:AbstractVector,VTY<:AbstractVector}
     x::VTX
@@ -22,6 +23,7 @@ end
 add_inode!(subgraph::Subgraph, inode::Int) = push!(subgraph.inodes, inode)
 Base.length(subgraph::Subgraph) = length(subgraph.inodes)
 
-include("generator.jl")
+include("separator.jl")
+include("verifier.jl")
 
 end # module
