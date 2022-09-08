@@ -10,4 +10,6 @@
 [codecov-img]: http://codecov.io/github/guberger/PWARegression_TopDown.jl/coverage.svg?branch=main
 [codecov-url]: http://codecov.io/github/guberger/PWARegression_TopDown.jl?branch=main
 
+![GUI](https://github.com/guberger/PWARegression_TopDown.jl/blob/main/sine.png)
+
 ## References
