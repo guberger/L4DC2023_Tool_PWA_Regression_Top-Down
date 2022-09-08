@@ -1,0 +1,7 @@
+name = "PWARegression"
+uuid = "1bdef61f-2aa1-42a4-8f68-a83465842526"
+authors = ["guberger <guillaume.berger@colorado.edu>"]
+version = "0.1.0"
+
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
