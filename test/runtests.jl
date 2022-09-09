@@ -1,3 +1,3 @@
 include("test_graph.jl")
-include("test_separator.jl")
-include("test_verifier.jl")
+include("test_residual.jl")
+include("test_certificate.jl")
