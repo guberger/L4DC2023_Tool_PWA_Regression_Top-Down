@@ -1,4 +1,4 @@
-function local_residual(subgraph::Subgraph, xc, σ, nx, ny)
+function local_residual!(res, subgraph::Subgraph, xc, σ, nx, ny)
     M = fill(NaN, nx, length(subgraph))
     N = fill(NaN, ny, length(subgraph))
     ω_tot = 0.0
@@ -15,24 +15,62 @@ function local_residual(subgraph::Subgraph, xc, σ, nx, ny)
     end
     try
         A = N / M
-        return A, norm(A*M - N)^2, ω_tot
+        for (k, r) in enumerate(eachrow(A*M - N))
+            res[k] = norm(r)
+        end
     catch
         @warn("Catching SingularException")
         A = (N*M') / (M*M' + 1e-6*I)
-        return A, norm(A*M - N)^2, ω_tot
-    end    
-end
-
-function max_local_residual(subgraph::Subgraph, σ, nx, ny)
-    res_max = -Inf
-    inode_opt = 0
-    for inode in subgraph.inodes
-        xc = subgraph.graph.nodes[inode].x
-        res = local_residual(subgraph, xc, σ, nx, ny)[2]
-        if res > res_max
-            res_max = res
-            inode_opt = inode
+        for (k, r) in enumerate(eachrow(A*M - N))
+            res[k] = norm(r)
         end
     end
-    return res_max, inode_opt    
+end
+
+function max_local_residual!(
+        res_max, inodes_opt, res, subgraph::Subgraph, σ, nx, ny
+    )
+    for inode in subgraph.inodes
+        xc = subgraph.graph.nodes[inode].x
+        local_residual!(res, subgraph, xc, σ, nx, ny)
+        for k = 1:ny
+            if res[k] > res_max[k]
+                res_max[k] = res[k]
+                inodes_opt[k] = inode
+            end
+        end
+    end
+end
+
+function find_infeasible(subgraph::Subgraph, ϵ, xc, ky, solver)
+    model = solver()
+    λus = Dict(
+        inode => @variable(model, lower_bound=0) for inode in subgraph.inodes
+    ) # upper bound : a*x ≤ y + ϵ
+    λls = Dict(
+        inode => @variable(model, lower_bound=0) for inode in subgraph.inodes
+    ) # lower bound : -a*x ≤ -y + ϵ
+    @constraint(model, sum(
+        (λus[inode] + λls[inode]) for inode in subgraph.inodes
+    ) == 1)
+    @constraint(model, sum(
+        (λus[inode] - λls[inode])*subgraph.graph.nodes[inode].x
+        for inode in subgraph.inodes
+    ) .== 0)
+    @constraint(model, sum(
+        (λus[inode] - λls[inode])*subgraph.graph.nodes[inode].y[ky]
+        for inode in subgraph.inodes
+    ) ≤ -ϵ)
+    @objective(model, Min, sum(
+        (λus[inode] + λls[inode])*norm(subgraph.graph.nodes[inode].x - xc)^2
+        for inode in subgraph.inodes
+    ))
+    optimize!(model)
+    @assert termination_status(model) == OPTIMAL
+    @assert primal_status(model) == FEASIBLE_POINT
+    return (
+        Dict(inode => value(λ) for (inode, λ) in λus),
+        Dict(inode => value(λ) for (inode, λ) in λls),
+        objective_value(model)
+    )
 end
