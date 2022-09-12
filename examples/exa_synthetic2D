@@ -1,4 +1,7 @@
 using Random
+using LinearAlgebra
+using JuMP
+using Gurobi
 using PyPlot
 
 Random.seed!(0)
@@ -6,51 +9,91 @@ Random.seed!(0)
 include("../src/PWARegression.jl")
 PWAR = PWARegression
 
-np = 1000
-xt_list = [(rand(), rand()) .- 0.5 for t = 1:np]
-pwa_func(x) = x[1] > 0 ? 1.0 + x[2] + randn()*0.01 :
-    x[2] > 0 ? 1.0 + x[1] : -(x[1] + x[2])
-# pwa_func(x) = abs(x[1]) + randn()*0.01
-pwa_func(x) = sin(x[1]*5)*0.5 + 0.5
-x_list = map(xt -> [xt..., 1.0], xt_list)
-yv_list = map(pwa_func, xt_list)
-y_list = map(yv -> [yv], yv_list)
+const GUROBI_ENV = Gurobi.Env()
+solver() = Model(optimizer_with_attributes(
+    () -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag"=>false
+))
+
+NT = PWAR.Node{Vector{Float64},Float64}
+graph = PWAR.Graph(NT[])
+aref1 = [1, 2, 1]
+aref2 = [0, 2, 2]
+aref3 = [0, -2, 3]
+for xt in Iterators.product(0:0.05:1, 0:0.1:2)
+    local x = vcat(collect(xt), 1.0)
+    local η = xt[1] > 0.5 ? dot(aref1, x) :
+        xt[2] > 1.0 ? dot(aref2, x) : 
+        dot(aref3, x)
+    # local η = sin(xt[1]*7) + 2
+    PWAR.add_node!(graph, PWAR.Node(x, η))
+end
 
 fig = figure(0)
 ax = fig.add_subplot(projection="3d")
-ax.set_zlim(0, 2.1)
-ax.plot(
-    getindex.(xt_list, 1), getindex.(xt_list, 2), yv_list,
-    ls="none", marker=".", ms=3, c="k"
-)
-
-NT = PWAR.Node{Vector{Float64},Vector{Float64}}
-graph = PWAR.Graph(NT[])
-for (x, y) in zip(x_list, y_list)
-    PWAR.add_node!(graph, PWAR.Node(x, y))
+for node in graph.nodes
+    ax.plot(
+        node.x[1], node.x[2], node.η, ls="none", marker=".", ms=5, c="tab:blue"
+    )
 end
 
+# local_L2_residual
+
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
-σ = 0.1
+σ = 0.05
 
 nplot = 100
-x1_ = range(-0.6, 0.6, length=nplot)
-x2_ = range(-0.6, 0.6, length=nplot)
+x1_ = range(-0.1, 1.1, length=nplot)
+x2_ = range(-0.1, 2.2, length=nplot)
 Xt_ = Iterators.product(x1_, x2_)
 X1_ = getindex.(Xt_, 1)
 X2_ = getindex.(Xt_, 2)
 RES_ = fill(NaN, size(Xt_))
 
 for (k, xt) in enumerate(Xt_)
-    xc = [xt..., 1.0]
-    A, res, ω_tot = PWAR.generate(subgraph, xc, σ, 3, 1)
+    local xc = [xt..., 1.0]
+    local res = PWAR.local_L2_residual(subgraph, xc, σ, 3)
     RES_[k] = sqrt(res)
 end
 
-ax.contourf(X1_, X2_, RES_, zdir="z", offset=-0.5)
+ax.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
+
+# regions
+
+ϵ = 0.1
+BD = 100
+γ = 0.01
+θ = 1e-5
+δ = 1e-5
+subgraphs = PWAR.maximal_regions(graph, ϵ, BD, γ, σ, θ, δ, 3, solver)
+
+fig = figure(1)
+ax = fig.add_subplot(projection="3d")
+colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
+
+for (k, subgraph) in enumerate(subgraphs)
+    local c = colors[mod(k - 1, length(colors)) + 1]
+    local lb = fill(Inf, 2)
+    local ub = fill(-Inf, 2)
+    for inode in subgraph.inodes
+        node = subgraph.graph.nodes[inode]
+        for k = 1:2
+            if node.x[k] < lb[k]
+                lb[k] = node.x[k]
+            end
+            if node.x[k] > ub[k]
+                ub[k] = node.x[k]
+            end
+        end
+    end
+    local x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
+    local x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])
+    ax.plot(x1rect, x2rect, k, c=c)
+end
+
+@assert false
 
 ax.set_xlim(-0.6, 0.6)
 ax.set_ylim(-0.6, 0.6)
-ax.set_zlim(-0.5, 1)
+ax.set_zlim(0, 4.1)
 ax.view_init(elev=14, azim=-70)
 fig.savefig("./examples/figures/sine.png", bbox_inches="tight", dpi=100)

@@ -15,43 +15,43 @@ solver() = Model(optimizer_with_attributes(
 
 # LInf_residual
 
-NT = PWAR.Node{Vector{Float64},Vector{Float64}}
+NT = PWAR.Node{Vector{Float64},Float64}
 graph = PWAR.Graph(NT[])
-Aref = [1 2 1; 0 0 0]
+aref = [1, 2, 1]
 for xt in Iterators.product(0:0.1:1, 0:0.2:2)
     local x = vcat(collect(xt), 1.0)
-    local y = Aref*x
-    PWAR.add_node!(graph, PWAR.Node(x, y))
+    local η = dot(aref, x)
+    PWAR.add_node!(graph, PWAR.Node(x, η))
 end
 x = [-0.1, 2.2, 1.0]
-PWAR.add_node!(graph, PWAR.Node(x, Aref*x - [1.0, 0.0]))
+PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
 x = [1.1, -0.2, 1.0]
-PWAR.add_node!(graph, PWAR.Node(x, Aref*x - [1.0, 0.0]))
-PWAR.add_node!(graph, PWAR.Node([5.0, 5.0, 1.0], [100.0, 0.0]))
-PWAR.add_node!(graph, PWAR.Node([-5.0, -5.0, 1.0], [100.0, 0.0]))
+PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
+PWAR.add_node!(graph, PWAR.Node([5.0, 5.0, 1.0], 100.0))
+PWAR.add_node!(graph, PWAR.Node([-5.0, -5.0, 1.0], 100.0))
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-4))
-r = PWAR.LInf_residual(subgraph, 1000, 3, 2, solver)
+r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
 
 @testset "LInf_residual no error" begin
     @test r ≈ 0
 end
 
-r = PWAR.LInf_residual(subgraph, 0, 3, 2, solver)
+r = PWAR.LInf_residual(subgraph, 0, 3, solver)
 
-@testset "LInf_residual small arad" begin
+@testset "LInf_residual small BD" begin
     @test r ≈ 6
 end
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-2))
-r = PWAR.LInf_residual(subgraph, 1000, 3, 2, solver)
+r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
 
 @testset "LInf_residual small error" begin
     @test r ≈ 1/2
 end
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
-r = PWAR.LInf_residual(subgraph, 1000, 3, 2, solver)
+r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
 
 @testset "LInf_residual big error" begin
     @test r ≈ 99/2
@@ -59,58 +59,47 @@ end
 
 # local_L2_residual
 
-NT = PWAR.Node{Vector{Float64},Vector{Float64}}
+NT = PWAR.Node{Vector{Float64},Float64}
 graph = PWAR.Graph(NT[])
-Aref = [1 2 1; 0 0 0]
+aref = [1, 2, 1]
 for xt in Iterators.product(0:0.1:1, 0:0.2:2)
     local x = vcat(collect(xt), 1.0)
-    local y = Aref*x
-    PWAR.add_node!(graph, PWAR.Node(x, y))
+    local η = dot(aref, x)
+    PWAR.add_node!(graph, PWAR.Node(x, η))
 end
 x = [0.5, 1.0, 1.0]
-PWAR.add_node!(graph, PWAR.Node(x, Aref*x - [1, 0]))
-PWAR.add_node!(graph, PWAR.Node(x, [1000.0, 0.0]))
-
-rescs = fill(NaN, 2)
+PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
+PWAR.add_node!(graph, PWAR.Node(x, 1000.0))
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
 xc = [0.0, 0.0, 1.0]
 σ = 0.2
-PWAR.local_L2_residual_comp!(rescs, subgraph, xc, σ, 3, 2)
+res = PWAR.local_L2_residual(subgraph, xc, σ, 3)
 
 @testset "local_L2_residual very local" begin
-    @test rescs[1] < 1e-5
-    @test rescs[2] < 1e-9
+    @test res < 1e-5
 end
 
 σ = 0.3
-PWAR.local_L2_residual_comp!(rescs, subgraph, xc, σ, 3, 2)
+res = PWAR.local_L2_residual(subgraph, xc, σ, 3)
 
 @testset "local_L2_residual less local" begin
-    @test rescs[1] > 1e-5
-    @test rescs[2] < 1e-9
+    @test res > 1e-5
 end
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
 xc = [0.0, 0.0, 1.0]
 σ = 0.2
-PWAR.local_L2_residual_comp!(rescs, subgraph, xc, σ, 3, 2)
+res = PWAR.local_L2_residual(subgraph, xc, σ, 3)
 
 @testset "local_L2_residual large error" begin
-    @test rescs[1] > 1e-5
-    @test rescs[2] < 1e-9
+    @test res > 1e-5
 end
-
-rescs_max = fill(-Inf, 2)
-inodes_opt = fill(0, 2)
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
 σ = 0.2
-PWAR.max_local_L2_residual_comp!(
-    rescs_max, inodes_opt, rescs, subgraph, σ, 3, 2
-)
+res, inode = PWAR.max_local_L2_residual(subgraph, σ, 3)
 
 @testset "max_local_L2_residual" begin
-    @test graph.nodes[inodes_opt[1]].x ≈ [0.5, 1, 1]
-    @test rescs_max[2] < 1e-9
+    @test graph.nodes[inode].x ≈ [0.5, 1, 1]
 end

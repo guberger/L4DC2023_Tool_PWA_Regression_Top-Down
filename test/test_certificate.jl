@@ -13,25 +13,37 @@ solver() = Model(optimizer_with_attributes(
     HiGHS.Optimizer, "output_flag"=>false
 ))
 
-NT = PWAR.Node{Vector{Float64},Vector{Float64}}
+NT = PWAR.Node{Vector{Float64},Float64}
 graph = PWAR.Graph(NT[])
-Aref = [1 2 1; 0 0 0]
-for xt in Iterators.product(0:0.1:1, 0:0.2:2)
+aref = [1, 2, 1]
+for xt in Iterators.product(0:0.2:1, 0:0.4:2)
     local x = vcat(collect(xt), 1.0)
-    local y = Aref*x
-    PWAR.add_node!(graph, PWAR.Node(x, y))
+    local η = dot(aref, x)
+    PWAR.add_node!(graph, PWAR.Node(x, η))
 end
-x = [0.55, 1.1, 1.0]
-PWAR.add_node!(graph, PWAR.Node(x, Aref*x - [1, 0]))
-PWAR.add_node!(graph, PWAR.Node(x, [1000.0, 0.0]))
+x = [0.5, 1.0, 1.0]
+PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
+PWAR.add_node!(graph, PWAR.Node(x, 1000.0))
 
 subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
-xc = [0.5, 1.0, 1.0]
-λus, λls, obj = PWAR.infeasibility_certificate(subgraph, 0.5, xc, 1, solver)
+xc = [0.4, 0.8, 1.0]
+λus, λls, obj = PWAR.infeasibility_certificate(subgraph, 0.5, xc, solver)
 
 @testset "infeasibility_certificate" begin
-    @test λus[122] ≈ 1/2
-    @test λls[62] ≈ 1/4
-    @test λls[72] ≈ 1/4
-    @test obj ≈ (0.05^2 + 0.1^2)/2 + (0.1^2)/4 + (0.2^2)/4
+    for inode in subgraph.inodes
+        if graph.nodes[inode].x ≈ [0.5, 1.0, 1.0]
+            @test λus[inode] ≈ 1/2
+            @test λls[inode] < 1e-9
+        elseif graph.nodes[inode].x ≈ [0.4, 1.2, 1.0]
+            @test λus[inode] < 1e-9
+            @test λls[inode] ≈ 1/4
+        elseif graph.nodes[inode].x ≈ [0.6, 0.8, 1.0]
+            @test λus[inode] < 1e-9
+            @test λls[inode] ≈ 1/4
+        else
+            @test λus[inode] < 1e-9
+            @test λls[inode] < 1e-9
+        end
+    end
+    @test obj ≈ (0.1^2 + 0.2^2)/2 + (0.2^2)/4 + (0.4^2)/4
 end
