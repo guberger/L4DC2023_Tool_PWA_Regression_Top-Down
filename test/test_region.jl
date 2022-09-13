@@ -29,7 +29,7 @@ BD = 100
 σ = 0.2
 θ = 1e-5
 δ = 1e-5
-subgraphs = PWAR.maximal_regions(graph, ϵ, BD, γ, σ, θ, δ, 3, solver)
+subgraphs = PWAR.all_maximal_regions(graph, ϵ, BD, γ, σ, θ, δ, 3, solver)
 
 inodes_covered = BitSet()
 for subgraph in subgraphs
@@ -38,6 +38,25 @@ for subgraph in subgraphs
     end
 end
 
-@testset "maximal_regions" begin
+@testset "all_maximal_regions" begin
+    @test inodes_covered == BitSet(1:length(graph))
+end
+
+ϵ = 0.1
+BD = 100
+γ = 0.01
+σ = 0.2
+θ = 1e-5
+δ = 1e-5
+subgraphs = PWAR.greedy_maximal_regions(graph, ϵ, BD, γ, σ, θ, δ, 3, solver)
+
+inodes_covered = BitSet()
+for subgraph in subgraphs
+    for inode in subgraph.inodes
+        push!(inodes_covered, inode)
+    end
+end
+
+@testset "greedy_maximal_regions" begin
     @test inodes_covered == BitSet(1:length(graph))
 end
