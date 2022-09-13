@@ -42,10 +42,10 @@ function LInf_residual(subgraph::Subgraph, BD, N, solver)
     return value(r)
 end
 
-function local_L2_residual(subgraph::Subgraph, xc, σ, N)
-    x_ = fill(NaN, length(subgraph), N)
-    η_ = fill(NaN, length(subgraph))
-    ω_tot = 0.0
+function local_L2_residual(subgraph::Subgraph, xc, σ, β, N)
+    nnode = length(subgraph)
+    x_ = zeros(nnode + N, N)
+    η_ = zeros(nnode + N)
     for (t, inode) in enumerate(subgraph.inodes)
         ρ = norm(subgraph.graph.nodes[inode].x - xc)
         ω = exp(-((ρ/σ)^2)/2)
@@ -53,24 +53,28 @@ function local_L2_residual(subgraph::Subgraph, xc, σ, N)
             x_[t, k] = subgraph.graph.nodes[inode].x[k]*ω
         end
         η_[t] = subgraph.graph.nodes[inode].η*ω
-        ω_tot += ω
     end
-    try
-        a = x_ \ η_
-        return norm(x_*a - η_)
-    catch
-        @warn("Catching SingularException")
-        a = (x_'*x_ + 1e-6*I) \ (x_'*η_)
-        return norm(x_*a - η_)
+    for k = 1:N
+        x_[nnode + k, k] = β
     end
+    a = x_ \ η_
+    return norm(x_*a - η_)
+    # try
+    #     a = x_ \ η_
+    #     return norm(x_*a - η_)
+    # catch
+    #     @warn("Catching SingularException")
+    #     a = (x_'*x_ + 1e-6*I) \ (x_'*η_)
+    #     return norm(x_*a - η_)
+    # end
 end
 
-function max_local_L2_residual(subgraph::Subgraph, σ, N)
+function max_local_L2_residual(subgraph::Subgraph, σ, ρ, N)
     res_max = -Inf
     inode_opt = 0
     for inode in subgraph.inodes
         xc = subgraph.graph.nodes[inode].x
-        res = local_L2_residual(subgraph, xc, σ, N)
+        res = local_L2_residual(subgraph, xc, σ, ρ, N)
         if res > res_max
             res_max = res
             inode_opt = inode
@@ -134,18 +138,19 @@ function _update_bounds!(lb, ub, subgraph::Subgraph, N)
 end
 
 """
-    all_maximal_regions(graph, ϵ, γ, δ, BD, σ, N, solver)
+    all_maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
 
 `ϵ`: max error;
 `BD`: max value of system parameters;
 `γ`: 'gap' for max error;
 `σ`: radius for local residual;
+`β`: regularization parameter;
 `θ`: threshold for certificate multipliers;
 `δ`: distance for certificate;
 `N`: variable dimension;
 `solver`: LP solver.
 """
-function all_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
+function all_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
     subgraph = Subgraph(graph, BitSet(1:length(graph)))
     subgraphs_remain = [subgraph]
     subgraphs_found = typeof(subgraph)[]
@@ -171,7 +176,7 @@ function all_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
         is_sub = false
         for (lbr, ubr) in rect_list
             is_sub = all(
-                k -> lbr[k] - θ < lb[k] && ub[k] < ubr[k] + θ, 1:N
+                k -> lbr[k] - δ < lb[k] && ub[k] < ubr[k] + δ, 1:N
             )
             is_sub && break
         end
@@ -187,7 +192,7 @@ function all_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
             continue
         end
         # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(subgraph, σ, N)[2]
+        inode = max_local_L2_residual(subgraph, σ, β, N)[2]
         @assert !iszero(inode)
         xc = subgraph.graph.nodes[inode].x
         λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver)
@@ -223,11 +228,11 @@ function all_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
         is_subneq = false
         for (lbr, ubr) in rect_list
             any(
-                k -> lbr[k] - θ > lb[k] || ub[k] > ubr[k] + θ, 1:N
+                k -> lbr[k] - δ > lb[k] || ub[k] > ubr[k] + δ, 1:N
             ) && continue
             # here is_sub, i.e., subgraph ⊆ rect
             is_subneq = any(
-                k -> lbr[k] + θ < lb[k] || ub[k] < ubr[k] - θ, 1:N
+                k -> lbr[k] + δ < lb[k] || ub[k] < ubr[k] - δ, 1:N
             )
             is_subneq && break
         end
@@ -239,18 +244,19 @@ function all_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
 end
 
 """
-    greedy_maximal_regions(graph, ϵ, γ, δ, BD, σ, N, solver)
+    greedy_maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
 
 `ϵ`: max error;
 `BD`: max value of system parameters;
 `γ`: 'gap' for max error;
 `σ`: radius for local residual;
+`β`: regularization parameter;
 `θ`: threshold for certificate multipliers;
 `δ`: distance for certificate;
 `N`: variable dimension;
 `solver`: LP solver.
 """
-function greedy_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
+function greedy_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
     subgraph = Subgraph(graph, BitSet(1:length(graph)))
     subgraphs_remain = PriorityQueue(subgraph => -length(graph))
     subgraphs_found = typeof(subgraph)[]
@@ -278,7 +284,7 @@ function greedy_maximal_regions(graph::Graph, ϵ, BD, γ, σ, θ, δ, N, solver)
             continue
         end
         # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(subgraph, σ, N)[2]
+        inode = max_local_L2_residual(subgraph, σ, β, N)[2]
         @assert !iszero(inode)
         xc = subgraph.graph.nodes[inode].x
         λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver)
