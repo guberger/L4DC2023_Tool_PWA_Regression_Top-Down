@@ -28,10 +28,10 @@ for xt in Iterators.product(0:0.05:1, 0:0.1:2)
     PWAR.add_node!(graph, PWAR.Node(x, η))
 end
 
-fig = figure(0)
-ax = fig.add_subplot(projection="3d")
+fig0 = figure(0)
+ax0 = fig0.add_subplot(projection="3d")
 for node in graph.nodes
-    ax.plot(
+    ax0.plot(
         node.x[1], node.x[2], node.η, ls="none", marker=".", ms=5, c="tab:blue"
     )
 end
@@ -56,7 +56,7 @@ for (k, xt) in enumerate(Xt_)
     RES_[k] = sqrt(res)
 end
 
-ax.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
+ax0.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
 
 # regions
 
@@ -65,10 +65,18 @@ BD = 100
 γ = 0.01
 θ = 1e-5
 δ = 1e-5
-subgraphs = PWAR.greedy_maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver)
+# subgraphs = PWAR.maximal_regions(
+#     graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+# )
+# subgraphs = PWAR.greedy_covering(
+#     graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+# )
+subgraphs = PWAR.optimal_covering(
+    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver, solver
+)
 
-fig = figure(1)
-ax = fig.add_subplot(projection="3d")
+fig1 = figure(1)
+ax1 = fig1.add_subplot(projection="3d")
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
 for (k, subgraph) in enumerate(subgraphs)
@@ -88,13 +96,50 @@ for (k, subgraph) in enumerate(subgraphs)
     end
     local x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
     local x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])
-    ax.plot(x1rect, x2rect, k, c=c)
+    ax1.plot(x1rect, x2rect, k, c=c)
 end
 
-@assert false
+# Plot planes
 
-ax.set_xlim(-0.6, 0.6)
-ax.set_ylim(-0.6, 0.6)
-ax.set_zlim(0, 4.1)
-ax.view_init(elev=14, azim=-70)
-fig.savefig("./examples/figures/sine.png", bbox_inches="tight", dpi=100)
+nplot = 5
+
+for subgraph in subgraphs
+    # optim parameters
+    local model = solver()
+    local a = @variable(model, [1:3], lower_bound=-BD, upper_bound=BD)
+    local r = @variable(model, lower_bound=-1)
+    for inode in subgraph.inodes
+        local node = subgraph.graph.nodes[inode]
+        @constraint(model, dot(a, node.x) ≤ node.η + r)
+        @constraint(model, dot(a, node.x) ≥ node.η - r)
+    end
+    @objective(model, Min, r)
+    optimize!(model)
+    @assert termination_status(model) == OPTIMAL
+    @assert primal_status(model) == FEASIBLE_POINT
+    local a_opt = value.(a)
+    # plot
+    local lb = fill(Inf, 2)
+    local ub = fill(-Inf, 2)
+    for inode in subgraph.inodes
+        node = subgraph.graph.nodes[inode]
+        for k = 1:2
+            if node.x[k] < lb[k]
+                lb[k] = node.x[k]
+            end
+            if node.x[k] > ub[k]
+                ub[k] = node.x[k]
+            end
+        end
+    end
+    local x1_ = range(lb[1], ub[1], length=nplot)
+    local x2_ = range(lb[2], ub[2], length=nplot)
+    local Xt_ = Iterators.product(x1_, x2_)
+    local X1_ = getindex.(Xt_, 1)
+    local X2_ = getindex.(Xt_, 2)
+    local Y_ = map(xt -> dot(a_opt, (xt..., 1.0)), Xt_)
+    ax0.plot_surface(X1_, X2_, Y_)
+end
+
+ax0.view_init(elev=14, azim=-70)
+fig0.savefig("./examples/figures/pwa.png", bbox_inches="tight", dpi=100)

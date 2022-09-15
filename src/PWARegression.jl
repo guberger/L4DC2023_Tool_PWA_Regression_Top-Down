@@ -118,6 +118,27 @@ function infeasibility_certificate(subgraph::Subgraph, ϵ, xc, solver)
     )
 end
 
+# MILP set cover
+
+function optimal_set_cover(N, sets, solver)
+    model = solver()
+    bs = [@variable(model, binary=true) for k in eachindex(sets)]
+    cons = [AffExpr(0.0) for i = 1:N]
+    for (k, set) in enumerate(sets)
+        for i in set
+            cons[i] += bs[k]
+        end
+    end
+    for con in cons
+        @constraint(model, con ≥ 1)
+    end
+    @objective(model, Min, sum(bs))
+    optimize!(model)
+    @assert termination_status(model) == OPTIMAL
+    @assert primal_status(model) == FEASIBLE_POINT
+    return value.(bs)    
+end
+
 # Maximal regions
 
 function _update_bounds!(lb, ub, x::AbstractVector, N)
@@ -131,14 +152,8 @@ function _update_bounds!(lb, ub, x::AbstractVector, N)
     end
 end
 
-function _update_bounds!(lb, ub, subgraph::Subgraph, N)
-    for inode in subgraph.inodes
-        _update_bounds!(lb, ub, subgraph.graph.nodes[inode].x, N)
-    end
-end
-
 """
-    all_maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
+    maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, N, solvers...)
 
 `ϵ`: max error;
 `BD`: max value of system parameters;
@@ -148,118 +163,16 @@ end
 `θ`: threshold for certificate multipliers;
 `δ`: distance for certificate;
 `N`: variable dimension;
-`solver`: LP solver.
+`solver_F`: LP solver for feasibility
+`solver_I`: LP solver for infeasibility
 """
-function all_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
-    subgraph = Subgraph(graph, BitSet(1:length(graph)))
-    subgraphs_remain = [subgraph]
-    subgraphs_found = typeof(subgraph)[]
-    iter = 0
-    lb = fill(NaN, N)
-    ub = fill(NaN, N)
-    rect_list = Tuple{Vector{Float64},Vector{Float64}}[]
-    while !isempty(subgraphs_remain)
-        iter += 1
-        println(
-            "iter: ", iter,
-            " - rects remain: ", length(subgraphs_remain),
-            " - rects found: ", length(subgraphs_found)
-        )
-        subgraph = pop!(subgraphs_remain)
-        isempty(subgraph.inodes) && continue
-        # compute lims of subgraph
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        _update_bounds!(lb, ub, subgraph, N)
-        any(k -> lb[k] > ub[k], 1:N) && continue
-        # check if contained in another rect (+`δ`)
-        is_sub = false
-        for (lbr, ubr) in rect_list
-            is_sub = all(
-                k -> lbr[k] - δ < lb[k] && ub[k] < ubr[k] + δ, 1:N
-            )
-            is_sub && break
-        end
-        is_sub && continue
-        # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
-        # if yes, add subgraph and associated rectangle to "found"
-        res = LInf_residual(subgraph, BD, N, solver)
-        if res < ϵ*(1 + γ)
-            push!(subgraphs_found, subgraph)
-            lbr, ubr = fill(Inf, N), fill(-Inf, N)
-            _update_bounds!(lbr, ubr, subgraph, N)
-            push!(rect_list, (lbr, ubr))
-            continue
-        end
-        # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(subgraph, σ, β, N)[2]
-        @assert !iszero(inode)
-        xc = subgraph.graph.nodes[inode].x
-        λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver)
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        for inode in subgraph.inodes
-            max(λus[inode], λls[inode]) < θ && continue
-            _update_bounds!(lb, ub, subgraph.graph.nodes[inode].x, N)
-        end
-        # add maximal sub-rectangles breaking the infeasibility certificate
-        subgraphs_left = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
-        subgraphs_right = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
-        for inode in subgraph.inodes
-            for k = 1:N
-                if subgraph.graph.nodes[inode].x[k] < ub[k] - δ
-                    add_inode!(subgraphs_left[k], inode)
-                end
-                if subgraph.graph.nodes[inode].x[k] > lb[k] + δ
-                    add_inode!(subgraphs_right[k], inode)
-                end
-            end
-        end
-        append!(subgraphs_remain, subgraphs_left, subgraphs_right)
-    end
-    # post-processing
-    println("Post-processing")
-    subgraphs_final = eltype(subgraphs_remain)[]
-    for subgraph in subgraphs_found
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        _update_bounds!(lb, ub, subgraph, N)
-        any(k -> lb[k] > ub[k], 1:N) && continue
-        is_subneq = false
-        for (lbr, ubr) in rect_list
-            any(
-                k -> lbr[k] - δ > lb[k] || ub[k] > ubr[k] + δ, 1:N
-            ) && continue
-            # here is_sub, i.e., subgraph ⊆ rect
-            is_subneq = any(
-                k -> lbr[k] + δ < lb[k] || ub[k] < ubr[k] - δ, 1:N
-            )
-            is_subneq && break
-        end
-        is_subneq && continue
-        push!(subgraphs_final, subgraph)
-    end
-    println("rect founds: ", length(subgraphs_final))
-    return subgraphs_final
-end
-
-"""
-    greedy_maximal_regions(graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
-
-`ϵ`: max error;
-`BD`: max value of system parameters;
-`γ`: 'gap' for max error;
-`σ`: radius for local residual;
-`β`: regularization parameter;
-`θ`: threshold for certificate multipliers;
-`δ`: distance for certificate;
-`N`: variable dimension;
-`solver`: LP solver.
-"""
-function greedy_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver)
+function maximal_regions(
+        graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver_F, solver_I
+    )
     subgraph = Subgraph(graph, BitSet(1:length(graph)))
     subgraphs_remain = PriorityQueue(subgraph => -length(graph))
     subgraphs_found = typeof(subgraph)[]
+    subgraphs_bis = typeof(subgraph)[]
     iter = 0
     lb = fill(NaN, N)
     ub = fill(NaN, N)
@@ -272,22 +185,34 @@ function greedy_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, sol
         )
         subgraph = dequeue!(subgraphs_remain)
         isempty(subgraph.inodes) && continue
+        # check if contained in a found subgraph
+        # if yes, discard subgraph because not maximal
+        is_sub = false
+        for subgraph_found in subgraphs_found
+            is_sub = subgraph.inodes ⊆ subgraph_found.inodes
+            is_sub && break
+        end
+        is_sub && continue
         # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
-        # if yes, add subgraph and remove nodes for remaining subgraphs
-        res = LInf_residual(subgraph, BD, N, solver)
+        # if yes, add subgraph to "found" and remove all previously found
+        # subgraphs that are strictly contained in subgraph
+        res = LInf_residual(subgraph, BD, N, solver_F)
         if res < ϵ*(1 + γ)
-            push!(subgraphs_found, subgraph)
-            for subgraph_remain in keys(subgraphs_remain)
-                setdiff!(subgraph_remain.inodes, subgraph.inodes)
-                subgraphs_remain[subgraph_remain] = -length(subgraph_remain)
+            empty!(subgraphs_bis)
+            for subgraph_found in subgraphs_found
+                subgraph_found.inodes ⊊ subgraph.inodes && continue
+                push!(subgraphs_bis, subgraph_found)
             end
+            subgraphs_found, subgraphs_bis = subgraphs_bis, subgraphs_found
+            push!(subgraphs_found, subgraph)
             continue
         end
         # if no, find an infeasibility certificate
         inode = max_local_L2_residual(subgraph, σ, β, N)[2]
         @assert !iszero(inode)
         xc = subgraph.graph.nodes[inode].x
-        λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver)
+        λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver_I)
+        # compute lims of infeasibility certificate
         fill!(lb, Inf)
         fill!(ub, -Inf)
         for inode in subgraph.inodes
@@ -310,6 +235,198 @@ function greedy_maximal_regions(graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, sol
         for subgraph in Iterators.flatten((subgraphs_left, subgraphs_right))
             enqueue!(subgraphs_remain, subgraph => -length(subgraph))
         end
+    end
+    # Finished
+    println("rect founds: ", length(subgraphs_found))
+    return subgraphs_found
+end
+
+"""
+    greedy_covering(graph, ϵ, BD, σ, β, γ, θ, δ, N, solvers...)
+
+`ϵ`: max error;
+`BD`: max value of system parameters;
+`γ`: 'gap' for max error;
+`σ`: radius for local residual;
+`β`: regularization parameter;
+`θ`: threshold for certificate multipliers;
+`δ`: distance for certificate;
+`N`: variable dimension;
+`solver_F`: LP solver for feasibility
+`solver_I`: LP solver for infeasibility
+"""
+function greedy_covering(
+        graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver_F, solver_I
+    )
+    subgraph = Subgraph(graph, BitSet(1:length(graph)))
+    subgraphs_remain = PriorityQueue(subgraph => -length(graph))
+    subgraphs_found = typeof(subgraph)[]
+    iter = 0
+    lb = fill(NaN, N)
+    ub = fill(NaN, N)
+    while !isempty(subgraphs_remain)
+        iter += 1
+        println(
+            "iter: ", iter,
+            " - rects remain: ", length(subgraphs_remain),
+            " - rects found: ", length(subgraphs_found)
+        )
+        subgraph = dequeue!(subgraphs_remain)
+        isempty(subgraph.inodes) && continue
+        # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
+        # if yes, add subgraph and remove nodes for remaining subgraphs
+        res = LInf_residual(subgraph, BD, N, solver_F)
+        if res < ϵ*(1 + γ)
+            push!(subgraphs_found, subgraph)
+            for subgraph_remain in keys(subgraphs_remain)
+                setdiff!(subgraph_remain.inodes, subgraph.inodes)
+                subgraphs_remain[subgraph_remain] = -length(subgraph_remain)
+            end
+            continue
+        end
+        # if no, find an infeasibility certificate
+        inode = max_local_L2_residual(subgraph, σ, β, N)[2]
+        @assert !iszero(inode)
+        xc = subgraph.graph.nodes[inode].x
+        λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver_I)
+        fill!(lb, Inf)
+        fill!(ub, -Inf)
+        for inode in subgraph.inodes
+            max(λus[inode], λls[inode]) < θ && continue
+            _update_bounds!(lb, ub, subgraph.graph.nodes[inode].x, N)
+        end
+        # add maximal sub-rectangles breaking the infeasibility certificate
+        subgraphs_left = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
+        subgraphs_right = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
+        for inode in subgraph.inodes
+            for k = 1:N
+                if subgraph.graph.nodes[inode].x[k] < ub[k] - δ
+                    add_inode!(subgraphs_left[k], inode)
+                end
+                if subgraph.graph.nodes[inode].x[k] > lb[k] + δ
+                    add_inode!(subgraphs_right[k], inode)
+                end
+            end
+        end
+        for subgraph in Iterators.flatten((subgraphs_left, subgraphs_right))
+            enqueue!(subgraphs_remain, subgraph => -length(subgraph))
+        end
+    end
+    # Finished
+    println("rect founds: ", length(subgraphs_found))
+    return subgraphs_found
+end
+
+"""
+    optimal_covering(graph, ϵ, BD, σ, β, γ, θ, δ, N, solvers...)
+
+`ϵ`: max error;
+`BD`: max value of system parameters;
+`γ`: 'gap' for max error;
+`σ`: radius for local residual;
+`β`: regularization parameter;
+`θ`: threshold for certificate multipliers;
+`δ`: distance for certificate;
+`N`: variable dimension;
+`solver_F`: LP solver for feasibility
+`solver_I`: LP solver for infeasibility
+`solver_C`: MILP solver for cover
+"""
+function optimal_covering(
+        graph::Graph, ϵ, BD, σ, β, γ, θ, δ, N, solver_F, solver_I, solver_C
+    )
+    nnode = length(graph)
+    subgraph = Subgraph(graph, BitSet(1:length(graph)))
+    subgraphs_remain = PriorityQueue(subgraph => -length(graph))
+    subgraphs_found = typeof(subgraph)[]
+    subgraphs_bis = typeof(subgraph)[]
+    iter = 0
+    lb = fill(NaN, N)
+    ub = fill(NaN, N)
+    inodes_list = BitSet[]
+    inodes_found = BitSet()
+    ncov_lower::Int = 1
+    ncov_upper::Int = nnode
+    all_nodes = BitSet(1:nnode)
+    while !isempty(subgraphs_remain) && ncov_lower < ncov_upper
+        iter += 1
+        println(
+            "iter: ", iter,
+            " - rects remain: ", length(subgraphs_remain),
+            " - rects found: ", length(subgraphs_found),
+            " - ncov_lower: ", ncov_lower,
+            " - ncov_upper: ", ncov_upper
+        )
+        subgraph = dequeue!(subgraphs_remain)
+        isempty(subgraph.inodes) && continue
+        # check if contained in a found subgraph
+        # if yes, discard subgraph because not maximal
+        is_sub = false
+        for subgraph_found in subgraphs_found
+            is_sub = subgraph.inodes ⊆ subgraph_found.inodes
+            is_sub && break
+        end
+        is_sub && continue
+        # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
+        # if yes, add subgraph to "found" and remove all previously found
+        # subgraphs that are strictly contained in subgraph
+        # finally, update upper bound on covering number
+        res = LInf_residual(subgraph, BD, N, solver_F)
+        if res < ϵ*(1 + γ)
+            empty!(subgraphs_bis)
+            for subgraph_found in subgraphs_found
+                subgraph_found.inodes ⊊ subgraph.inodes && continue
+                push!(subgraphs_bis, subgraph_found)
+            end
+            subgraphs_found, subgraphs_bis = subgraphs_bis, subgraphs_found
+            push!(subgraphs_found, subgraph)
+            # update upper bound on covering number
+            empty!(inodes_list)
+            empty!(inodes_found)
+            for subgraph in subgraphs_found
+                push!(inodes_list, subgraph.inodes)
+                union!(inodes_found, subgraph.inodes)
+            end
+            !(all_nodes == inodes_found) && continue
+            bs = optimal_set_cover(nnode, inodes_list, solver_C)
+            ncov_upper = sum(b -> round(Int, b), bs)
+            continue
+        end
+        # if no, find an infeasibility certificate
+        inode = max_local_L2_residual(subgraph, σ, β, N)[2]
+        @assert !iszero(inode)
+        xc = subgraph.graph.nodes[inode].x
+        λus, λls, obj = infeasibility_certificate(subgraph, ϵ, xc, solver_I)
+        # compute lims of infeasibility certificate
+        fill!(lb, Inf)
+        fill!(ub, -Inf)
+        for inode in subgraph.inodes
+            max(λus[inode], λls[inode]) < θ && continue
+            _update_bounds!(lb, ub, subgraph.graph.nodes[inode].x, N)
+        end
+        # add maximal sub-rectangles breaking the infeasibility certificate
+        subgraphs_left = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
+        subgraphs_right = [Subgraph(subgraph.graph, BitSet()) for k = 1:N]
+        for inode in subgraph.inodes
+            for k = 1:N
+                if subgraph.graph.nodes[inode].x[k] < ub[k] - δ
+                    add_inode!(subgraphs_left[k], inode)
+                end
+                if subgraph.graph.nodes[inode].x[k] > lb[k] + δ
+                    add_inode!(subgraphs_right[k], inode)
+                end
+            end
+        end
+        for subgraph in Iterators.flatten((subgraphs_left, subgraphs_right))
+            enqueue!(subgraphs_remain, subgraph => -length(subgraph))
+        end
+        # update lower_bound on covering number
+        empty!(inodes_list)
+        for subgraph in Iterators.flatten((subgraphs_found, keys(subgraphs_remain)))
+            push!(inodes_list, subgraph.inodes)
+        end
+        bs = optimal_set_cover(nnode, inodes_list, solver_C)
+        ncov_lower = sum(b -> round(Int, b), bs)
     end
     # Finished
     println("rect founds: ", length(subgraphs_found))
