@@ -30,28 +30,28 @@ PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
 PWAR.add_node!(graph, PWAR.Node([5.0, 5.0, 1.0], 100.0))
 PWAR.add_node!(graph, PWAR.Node([-5.0, -5.0, 1.0], 100.0))
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-4))
-r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
+inodes = BitSet(1:length(graph)-4)
+r = PWAR.LInf_residual(graph, inodes, 1000, 3, solver)
 
 @testset "LInf_residual no error" begin
     @test r ≈ 0
 end
 
-r = PWAR.LInf_residual(subgraph, 0, 3, solver)
+r = PWAR.LInf_residual(graph, inodes, 0, 3, solver)
 
 @testset "LInf_residual small BD" begin
     @test r ≈ 6
 end
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-2))
-r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
+inodes = BitSet(1:length(graph)-2)
+r = PWAR.LInf_residual(graph, inodes, 1000, 3, solver)
 
 @testset "LInf_residual small error" begin
     @test r ≈ 1/2
 end
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
-r = PWAR.LInf_residual(subgraph, 1000, 3, solver)
+inodes = BitSet(1:length(graph))
+r = PWAR.LInf_residual(graph, inodes, 1000, 3, solver)
 
 @testset "LInf_residual big error" begin
     @test r ≈ 99/2
@@ -71,11 +71,11 @@ x = [0.5, 1.0, 1.0]
 PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
 PWAR.add_node!(graph, PWAR.Node(x, 1000.0))
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
+inodes = BitSet(1:length(graph)-1)
 xc = [0.0, 0.0, 1.0]
 σ = 0.2
 β = 1e-8
-res = PWAR.local_L2_residual(subgraph, xc, σ, β, 3)
+res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
 
 @testset "local_L2_residual small σ small β" begin
     @test res < 1e-5
@@ -83,7 +83,7 @@ end
 
 σ = 0.2
 β = 1e-4
-res = PWAR.local_L2_residual(subgraph, xc, σ, β, 3)
+res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
 
 @testset "local_L2_residual small σ large β" begin
     @test res > 1e-4
@@ -91,26 +91,26 @@ end
 
 σ = 0.3
 β = 1e-8
-res = PWAR.local_L2_residual(subgraph, xc, σ, β, 3)
+res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
 
 @testset "local_L2_residual large σ small β" begin
     @test res > 1e-5
 end
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
+inodes = BitSet(1:length(graph))
 xc = [0.0, 0.0, 1.0]
 σ = 0.2
 β = 1e-8
-res = PWAR.local_L2_residual(subgraph, xc, σ, β, 3)
+res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
 
 @testset "local_L2_residual large error" begin
     @test res > 1e-5
 end
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
+inodes = BitSet(1:length(graph)-1)
 σ = 0.2
 β = 1e-8
-res, inode = PWAR.max_local_L2_residual(subgraph, σ, β, 3)
+res, inode = PWAR.max_local_L2_residual(graph, inodes, σ, β, 3)
 
 @testset "max_local_L2_residual" begin
     @test graph.nodes[inode].x ≈ [0.5, 1, 1]

@@ -38,7 +38,7 @@ end
 
 # local_L2_residual
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)))
+inodes = BitSet(1:length(graph))
 σ = 0.05
 β = 1e-6
 
@@ -52,7 +52,7 @@ RES_ = fill(NaN, size(Xt_))
 
 for (k, xt) in enumerate(Xt_)
     local xc = [xt..., 1.0]
-    local res = PWAR.local_L2_residual(subgraph, xc, σ, β, 3)
+    local res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
     RES_[k] = sqrt(res)
 end
 
@@ -65,13 +65,13 @@ BD = 100
 γ = 0.01
 θ = 1e-5
 δ = 1e-5
-# subgraphs = PWAR.maximal_regions(
-#     graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
-# )
-# subgraphs = PWAR.greedy_covering(
-#     graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
-# )
-subgraphs = PWAR.optimal_covering(
+inodes_list = PWAR.maximal_regions(
+    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+)
+inodes_list = PWAR.greedy_covering(
+    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+)
+inodes_list = PWAR.optimal_covering(
     graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver, solver
 )
 
@@ -79,18 +79,18 @@ fig1 = figure(1)
 ax1 = fig1.add_subplot(projection="3d")
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
-for (k, subgraph) in enumerate(subgraphs)
+for (k, inodes) in enumerate(inodes_list)
     local c = colors[mod(k - 1, length(colors)) + 1]
     local lb = fill(Inf, 2)
     local ub = fill(-Inf, 2)
-    for inode in subgraph.inodes
-        node = subgraph.graph.nodes[inode]
+    for inode in inodes
+        local x = graph.nodes[inode].x
         for k = 1:2
-            if node.x[k] < lb[k]
-                lb[k] = node.x[k]
+            if x[k] < lb[k]
+                lb[k] = x[k]
             end
-            if node.x[k] > ub[k]
-                ub[k] = node.x[k]
+            if x[k] > ub[k]
+                ub[k] = x[k]
             end
         end
     end
@@ -103,13 +103,13 @@ end
 
 nplot = 5
 
-for subgraph in subgraphs
+for inodes in inodes_list
     # optim parameters
     local model = solver()
     local a = @variable(model, [1:3], lower_bound=-BD, upper_bound=BD)
     local r = @variable(model, lower_bound=-1)
-    for inode in subgraph.inodes
-        local node = subgraph.graph.nodes[inode]
+    for inode in inodes
+        local node = graph.nodes[inode]
         @constraint(model, dot(a, node.x) ≤ node.η + r)
         @constraint(model, dot(a, node.x) ≥ node.η - r)
     end
@@ -121,8 +121,8 @@ for subgraph in subgraphs
     # plot
     local lb = fill(Inf, 2)
     local ub = fill(-Inf, 2)
-    for inode in subgraph.inodes
-        node = subgraph.graph.nodes[inode]
+    for inode in inodes
+        node = graph.nodes[inode]
         for k = 1:2
             if node.x[k] < lb[k]
                 lb[k] = node.x[k]

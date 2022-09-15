@@ -25,12 +25,12 @@ x = [0.5, 1.0, 1.0]
 PWAR.add_node!(graph, PWAR.Node(x, dot(aref, x) - 1.0))
 PWAR.add_node!(graph, PWAR.Node(x, 1000.0))
 
-subgraph = PWAR.Subgraph(graph, BitSet(1:length(graph)-1))
+inodes = BitSet(1:length(graph)-1)
 xc = [0.4, 0.8, 1.0]
-λus, λls, obj = PWAR.infeasibility_certificate(subgraph, 0.5, xc, solver)
+λus, λls, obj = PWAR.infeasibility_certificate(graph, inodes, 0.5, xc, solver)
 
 @testset "infeasibility_certificate" begin
-    for inode in subgraph.inodes
+    for inode in inodes
         if graph.nodes[inode].x ≈ [0.5, 1.0, 1.0]
             @test λus[inode] ≈ 1/2
             @test λls[inode] < 1e-9
