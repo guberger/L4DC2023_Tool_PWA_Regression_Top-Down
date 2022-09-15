@@ -28,10 +28,9 @@ BD = 100
 β = 1e-8
 γ = 0.01
 σ = 0.2
-θ = 1e-5
 δ = 1e-5
 inodes_list = PWAR.maximal_regions(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 
 inodes_covered = BitSet()
@@ -48,10 +47,9 @@ BD = 100
 β = 1e-8
 γ = 0.01
 σ = 0.2
-θ = 1e-5
 δ = 1e-5
 subgraphs = PWAR.greedy_covering(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 
 inodes_covered = BitSet()
@@ -68,10 +66,9 @@ BD = 100
 β = 1e-8
 γ = 0.01
 σ = 0.2
-θ = 1e-5
 δ = 1e-5
 subgraphs = PWAR.optimal_covering(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
 
 inodes_covered = BitSet()

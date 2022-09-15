@@ -27,7 +27,7 @@ PWAR.add_node!(graph, PWAR.Node(x, 1000.0))
 
 inodes = BitSet(1:length(graph)-1)
 xc = [0.4, 0.8, 1.0]
-λus, λls, obj = PWAR.infeasibility_certificate(graph, inodes, 0.5, xc, solver)
+λus, λls = PWAR.infeasibility_certificate(graph, inodes, 0.5, xc, solver)
 
 @testset "infeasibility_certificate" begin
     for inode in inodes
@@ -45,5 +45,4 @@ xc = [0.4, 0.8, 1.0]
             @test λls[inode] < 1e-9
         end
     end
-    @test obj ≈ (0.1^2 + 0.2^2)/2 + (0.2^2)/4 + (0.4^2)/4
 end

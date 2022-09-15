@@ -24,7 +24,7 @@ for xt in Iterators.product(0:0.05:1, 0:0.1:2)
     local η = xt[1] > 0.5 ? dot(aref1, x) :
         xt[2] > 1.0 ? dot(aref2, x) : 
         dot(aref3, x)
-    # local η = sin(xt[1]*7) + 2
+    local η = sin(xt[1]*7) + 2
     PWAR.add_node!(graph, PWAR.Node(x, η))
 end
 
@@ -63,16 +63,15 @@ ax0.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
 ϵ = 0.1
 BD = 100
 γ = 0.01
-θ = 1e-5
 δ = 1e-5
 inodes_list = PWAR.maximal_regions(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 inodes_list = PWAR.greedy_covering(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 inodes_list = PWAR.optimal_covering(
-    graph, ϵ, BD, σ, β, γ, θ, δ, 3, solver, solver, solver
+    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
 
 fig1 = figure(1)
