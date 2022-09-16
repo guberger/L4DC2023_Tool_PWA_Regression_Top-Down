@@ -72,7 +72,7 @@ function max_local_L2_residual(graph, inodes, σ, ρ, N)
             inode_opt = inode
         end
     end
-    return res_max, inode_opt
+    return inode_opt
 end
 
 # Certificate
@@ -136,6 +136,47 @@ struct KeyPQ
     inodes::BitSet
 end
 
+PairPQ(inodes) = KeyPQ(inodes) => -length(inodes)
+
+function find_infeasibility_certificate(
+        graph, inodes, ϵ, ϵ_up, BD, σ, β, N, solver_F, solver_I
+    )
+    inode = max_local_L2_residual(graph, inodes, σ, β, N)
+    @assert !iszero(inode)
+    xc = graph.nodes[inode].x
+    λus, λls = infeasibility_certificate(graph, inodes, ϵ_up, xc, solver_I)
+    # select certificate nodes (with `θ`)
+    θ = 1/2
+    inodes_cert = BitSet()
+    while true
+        for inode in inodes
+            max(λus[inode], λls[inode]) ≥ θ && push!(inodes_cert, inode)
+        end
+        # verify certificate
+        LInf_residual(
+            graph, inodes_cert, BD, N, solver_F
+        ) > ϵ && return inodes_cert
+        θ /= 2
+    end
+end
+
+function compute_lims(graph, inodes, N)
+    lb = fill(Inf, N)
+    ub = fill(-Inf, N)
+    for inode in inodes
+        x = graph.nodes[inode].x
+        for k = 1:N
+            if x[k] < lb[k]
+                lb[k] = x[k]
+            end
+            if x[k] > ub[k]
+                ub[k] = x[k]
+            end
+        end
+    end
+    return lb, ub
+end
+
 """
     maximal_regions(graph, ϵ, BD, σ, β, γ, δ, N, solvers...)
 
@@ -152,14 +193,9 @@ end
 function maximal_regions(
         graph::Graph, ϵ, BD, σ, β, γ, δ, N, solver_F, solver_I
     )
-    inodes = BitSet(1:length(graph))
-    inodes_list_remain = PriorityQueue(KeyPQ(inodes) => -length(inodes))
+    inodes_list_remain = PriorityQueue(PairPQ(BitSet(1:length(graph))))
     inodes_list_found = BitSet[]
-    inodes_list_bis = BitSet[]
-    inodes_cert = BitSet()
     iter = 0
-    lb = fill(NaN, N)
-    ub = fill(NaN, N)
     while !isempty(inodes_list_remain)
         iter += 1
         println(
@@ -170,76 +206,28 @@ function maximal_regions(
         inodes = dequeue!(inodes_list_remain).inodes
         isempty(inodes) && continue
         # check if contained in a found subgraph
-        # if yes, discard subgraph because not maximal
-        is_sub = false
-        for inodes_found in inodes_list_found
-            is_sub = inodes ⊆ inodes_found
-            is_sub && break
-        end
-        is_sub && continue
+        any(x -> inodes ⊆ x, inodes_list_found) && continue
         # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
         # if yes, add subgraph to "found" and remove all previously found
         # subgraphs that are strictly contained in subgraph
         res = LInf_residual(graph, inodes, BD, N, solver_F)
         if res < ϵ*(1 + γ)
-            empty!(inodes_list_bis)
-            for inodes_found in inodes_list_found
-                inodes_found ⊊ inodes && continue
-                push!(inodes_list_bis, inodes_found)
-            end
-            inodes_list_found, inodes_list_bis = inodes_list_bis, inodes_list_found
+            filter!(x -> !(x ⊆ inodes), inodes_list_found)
             push!(inodes_list_found, inodes)
             continue
         end
         # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(graph, inodes, σ, β, N)[2]
-        @assert !iszero(inode)
-        xc = graph.nodes[inode].x
-        λus, λls = infeasibility_certificate(
-            graph, inodes, ϵ*(1 + γ/2), xc, solver_I
+        inodes_cert = find_infeasibility_certificate(
+            graph, inodes, ϵ, ϵ*(1 + γ/2), BD, σ, β, N, solver_F, solver_I
         )
-        # select certificate nodes (with `θ`)
-        θ = 1/2
-        empty!(inodes_cert)
-        while true
-            for inode in inodes
-                max(λus[inode], λls[inode]) < θ && continue
-                push!(inodes_cert, inode)
-            end
-            # verify certificate
-            res = LInf_residual(graph, inodes_cert, BD, N, solver_F)
-            res > ϵ && break
-            θ /= 2
-        end
         # compute lims of infeasibility certificate
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        for inode in inodes_cert
-            x = graph.nodes[inode].x
-            for k = 1:N
-                if x[k] < lb[k]
-                    lb[k] = x[k]
-                end
-                if x[k] > ub[k]
-                    ub[k] = x[k]
-                end
-            end
-        end
+        lb, ub = compute_lims(graph, inodes_cert, N)
         # add maximal sub-rectangles breaking the infeasibility certificate
-        inodes_list_left = [BitSet() for k = 1:N]
-        inodes_list_right = [BitSet() for k = 1:N]
-        for inode in inodes
-            for k = 1:N
-                if graph.nodes[inode].x[k] < ub[k] - δ
-                    push!(inodes_list_left[k], inode)
-                end
-                if graph.nodes[inode].x[k] > lb[k] + δ
-                    push!(inodes_list_right[k], inode)
-                end
-            end
-        end
-        for inodes in Iterators.flatten((inodes_list_left, inodes_list_right))
-            enqueue!(inodes_list_remain, KeyPQ(inodes) => -length(inodes))
+        for k = 1:N
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] < ub[k] - δ, inodes)))
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] > lb[k] + δ, inodes)))
         end
     end
     # Finished
@@ -263,13 +251,9 @@ end
 function greedy_covering(
         graph::Graph, ϵ, BD, σ, β, γ, δ, N, solver_F, solver_I
     )
-    inodes = BitSet(1:length(graph))
-    inodes_list_remain = PriorityQueue(KeyPQ(inodes) => -length(inodes))
+    inodes_list_remain = PriorityQueue(PairPQ(BitSet(1:length(graph))))
     inodes_list_found = BitSet[]
-    inodes_cert = BitSet()
     iter = 0
-    lb = fill(NaN, N)
-    ub = fill(NaN, N)
     while !isempty(inodes_list_remain)
         iter += 1
         println(
@@ -291,54 +275,17 @@ function greedy_covering(
             continue
         end
         # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(graph, inodes, σ, β, N)[2]
-        @assert !iszero(inode)
-        xc = graph.nodes[inode].x
-        λus, λls = infeasibility_certificate(
-            graph, inodes, ϵ*(1 + γ/2), xc, solver_I
+        inodes_cert = find_infeasibility_certificate(
+            graph, inodes, ϵ, ϵ*(1 + γ/2), BD, σ, β, N, solver_F, solver_I
         )
-        # select certificate nodes (with `θ`)
-        θ = 1/2
-        empty!(inodes_cert)
-        while true
-            for inode in inodes
-                max(λus[inode], λls[inode]) < θ && continue
-                push!(inodes_cert, inode)
-            end
-            # verify certificate
-            res = LInf_residual(graph, inodes_cert, BD, N, solver_F)
-            res > ϵ && break
-            θ /= 2
-        end
         # compute lims of infeasibility certificate
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        for inode in inodes_cert
-            x = graph.nodes[inode].x
-            for k = 1:N
-                if x[k] < lb[k]
-                    lb[k] = x[k]
-                end
-                if x[k] > ub[k]
-                    ub[k] = x[k]
-                end
-            end
-        end
+        lb, ub = compute_lims(graph, inodes_cert, N)
         # add maximal sub-rectangles breaking the infeasibility certificate
-        inodes_list_left = [BitSet() for k = 1:N]
-        inodes_list_right = [BitSet() for k = 1:N]
-        for inode in inodes
-            for k = 1:N
-                if graph.nodes[inode].x[k] < ub[k] - δ
-                    push!(inodes_list_left[k], inode)
-                end
-                if graph.nodes[inode].x[k] > lb[k] + δ
-                    push!(inodes_list_right[k], inode)
-                end
-            end
-        end
-        for inodes in Iterators.flatten((inodes_list_left, inodes_list_right))
-            enqueue!(inodes_list_remain, KeyPQ(inodes) => -length(inodes))
+        for k = 1:N
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] < ub[k] - δ, inodes)))
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] > lb[k] + δ, inodes)))
         end
     end
     # Finished
@@ -364,19 +311,12 @@ function optimal_covering(
         graph::Graph, ϵ, BD, σ, β, γ, δ, N, solver_F, solver_I, solver_C
     )
     nnode = length(graph)
-    inodes = BitSet(1:length(graph))
-    inodes_list_remain = PriorityQueue(KeyPQ(inodes) => -length(inodes))
+    inodes_list_remain = PriorityQueue(PairPQ(BitSet(1:length(graph))))
     inodes_list_found = BitSet[]
-    inodes_list_bis = BitSet[]
-    inodes_cert = BitSet()
-    inodes_list_all = BitSet[]
     inodes_found_union = BitSet()
     ncov_lower::Int = 1
     ncov_upper::Int = nnode
-    all_nodes = BitSet(1:nnode)
     iter = 0
-    lb = fill(NaN, N)
-    ub = fill(NaN, N)
     while !isempty(inodes_list_remain) && ncov_lower < ncov_upper
         iter += 1
         println(
@@ -389,96 +329,42 @@ function optimal_covering(
         inodes = dequeue!(inodes_list_remain).inodes
         isempty(inodes) && continue
         # check if contained in a found subgraph
-        # if yes, discard subgraph because not maximal
-        is_sub = false
-        for inodes_found in inodes_list_found
-            is_sub = inodes ⊆ inodes_found
-            is_sub && break
-        end
-        is_sub && continue
+        any(x -> inodes ⊆ x, inodes_list_found) && continue
         # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
         # if yes, add subgraph to "found" and remove all previously found
         # subgraphs that are strictly contained in subgraph
         # finally, update upper bound on covering number
         res = LInf_residual(graph, inodes, BD, N, solver_F)
         if res < ϵ*(1 + γ)
-            empty!(inodes_list_bis)
-            for inodes_found in inodes_list_found
-                inodes_found ⊊ inodes && continue
-                push!(inodes_list_bis, inodes_found)
-            end
-            inodes_list_found, inodes_list_bis = inodes_list_bis, inodes_list_found
+            filter!(x -> !(x ⊆ inodes), inodes_list_found)
             push!(inodes_list_found, inodes)
             # update upper bound on covering number
             empty!(inodes_found_union)
             for inodes_found in inodes_list_found
                 union!(inodes_found_union, inodes_found)
             end
-            !(all_nodes == inodes_found_union) && continue
+            !(length(inodes_found_union) == nnode) && continue
             bs = optimal_set_cover(nnode, inodes_list_found, solver_C)
             ncov_upper = sum(b -> round(Int, b), bs)
             continue
         end
         # if no, find an infeasibility certificate
-        inode = max_local_L2_residual(graph, inodes, σ, β, N)[2]
-        @assert !iszero(inode)
-        xc = graph.nodes[inode].x
-        λus, λls = infeasibility_certificate(
-            graph, inodes, ϵ*(1 + γ/2), xc, solver_I
+        inodes_cert = find_infeasibility_certificate(
+            graph, inodes, ϵ, ϵ*(1 + γ/2), BD, σ, β, N, solver_F, solver_I
         )
-        # select certificate nodes (with `θ`)
-        θ = 1/2
-        empty!(inodes_cert)
-        while true
-            for inode in inodes
-                max(λus[inode], λls[inode]) < θ && continue
-                push!(inodes_cert, inode)
-            end
-            # verify certificate
-            res = LInf_residual(graph, inodes_cert, BD, N, solver_F)
-            res > ϵ && break
-            θ /= 2
-        end
-        # verify certificate
-        res = LInf_residual(graph, inodes, BD, N, solver_F)
-        @assert res > ϵ
         # compute lims of infeasibility certificate
-        fill!(lb, Inf)
-        fill!(ub, -Inf)
-        for inode in inodes_cert
-            x = graph.nodes[inode].x
-            for k = 1:N
-                if x[k] < lb[k]
-                    lb[k] = x[k]
-                end
-                if x[k] > ub[k]
-                    ub[k] = x[k]
-                end
-            end
-        end
+        lb, ub = compute_lims(graph, inodes_cert, N)
         # add maximal sub-rectangles breaking the infeasibility certificate
-        inodes_list_left = [BitSet() for k = 1:N]
-        inodes_list_right = [BitSet() for k = 1:N]
-        for inode in inodes
-            for k = 1:N
-                if graph.nodes[inode].x[k] < ub[k] - δ
-                    push!(inodes_list_left[k], inode)
-                end
-                if graph.nodes[inode].x[k] > lb[k] + δ
-                    push!(inodes_list_right[k], inode)
-                end
-            end
-        end
-        for inodes in Iterators.flatten((inodes_list_left, inodes_list_right))
-            enqueue!(inodes_list_remain, KeyPQ(inodes) => -length(inodes))
+        for k = 1:N
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] < ub[k] - δ, inodes)))
+            enqueue!(inodes_list_remain,
+                PairPQ(filter(y -> graph.nodes[y].x[k] > lb[k] + δ, inodes)))
         end
         # update lower_bound on covering number
-        empty!(inodes_list_all)
-        for inodes in Iterators.flatten((
-                inodes_list_found,
-                k.inodes for k in keys(inodes_list_remain)
-            ))
-            push!(inodes_list_all, inodes)
+        inodes_list_all = copy(inodes_list_found)
+        for k_remain in keys(inodes_list_remain)
+            push!(inodes_list_all, k_remain.inodes)
         end
         bs = optimal_set_cover(nnode, inodes_list_all, solver_C)
         ncov_lower = sum(b -> round(Int, b), bs)

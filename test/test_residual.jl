@@ -110,7 +110,7 @@ end
 inodes = BitSet(1:length(graph)-1)
 σ = 0.2
 β = 1e-8
-res, inode = PWAR.max_local_L2_residual(graph, inodes, σ, β, 3)
+inode = PWAR.max_local_L2_residual(graph, inodes, σ, β, 3)
 
 @testset "max_local_L2_residual" begin
     @test graph.nodes[inode].x ≈ [0.5, 1, 1]

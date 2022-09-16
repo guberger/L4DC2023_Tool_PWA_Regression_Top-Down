@@ -24,7 +24,7 @@ for xt in Iterators.product(0:0.05:1, 0:0.1:2)
     local η = xt[1] > 0.5 ? dot(aref1, x) :
         xt[2] > 1.0 ? dot(aref2, x) : 
         dot(aref3, x)
-    local η = sin(xt[1]*7) + 2
+    # local η = sin(xt[1]*7) + 2
     PWAR.add_node!(graph, PWAR.Node(x, η))
 end
 
@@ -38,7 +38,7 @@ end
 
 # local_L2_residual
 
-inodes = BitSet(1:length(graph))
+inodes_all = BitSet(1:length(graph))
 σ = 0.05
 β = 1e-6
 
@@ -52,7 +52,7 @@ RES_ = fill(NaN, size(Xt_))
 
 for (k, xt) in enumerate(Xt_)
     local xc = [xt..., 1.0]
-    local res = PWAR.local_L2_residual(graph, inodes, xc, σ, β, 3)
+    local res = PWAR.local_L2_residual(graph, inodes_all, xc, σ, β, 3)
     RES_[k] = sqrt(res)
 end
 
