@@ -19,12 +19,9 @@ nodes = NT[]
 aref1 = [1, 2, 1]
 aref2 = [0, 2, 2]
 aref3 = [0, -2, 3]
-for xt in Iterators.product(0:0.05:1, 0:0.1:2, (1.0,))
+for xt in Iterators.product(-1:0.05:1, -2:0.1:2, (1.0,))
     local x = collect(xt)
-    local η = xt[1] > 0.5 ? dot(aref1, x) :
-        xt[2] > 1.0 ? dot(aref2, x) : 
-        dot(aref3, x)
-    local η = sin(xt[1]*7) + 2
+    local η = max(abs(xt[1]) - 0.5*xt[3], 0) + abs(xt[2])
     push!(nodes, PWAR.Node(x, η))
 end
 
@@ -43,8 +40,8 @@ inodes_all = BitSet(1:length(nodes))
 β = 1e-6
 
 nplot = 100
-x1_ = range(-0.1, 1.1, length=nplot)
-x2_ = range(-0.2, 2.2, length=nplot)
+x1_ = range(-1.1, 1.1, length=nplot)
+x2_ = range(-2.2, 2.2, length=nplot)
 Xt_ = Iterators.product(x1_, x2_)
 X1_ = getindex.(Xt_, 1)
 X2_ = getindex.(Xt_, 2)
@@ -60,16 +57,16 @@ ax0.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
 
 # regions
 
-ϵ = 0.15
+ϵ = 0.05
 BD = 100
 γ = 0.01
 δ = 1e-5
 # inodes_list = PWAR.maximal_regions(
 #     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 # )
-inodes_list = PWAR.greedy_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-)
+# inodes_list = PWAR.greedy_covering(
+#     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
+# )
 inodes_list = PWAR.optimal_covering(
     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
