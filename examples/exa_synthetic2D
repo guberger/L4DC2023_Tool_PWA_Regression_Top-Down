@@ -15,7 +15,7 @@ solver() = Model(optimizer_with_attributes(
 ))
 
 NT = PWAR.Node{Vector{Float64},Float64}
-graph = PWAR.Graph(NT[])
+nodes = NT[]
 aref1 = [1, 2, 1]
 aref2 = [0, 2, 2]
 aref3 = [0, -2, 3]
@@ -24,13 +24,13 @@ for xt in Iterators.product(0:0.05:1, 0:0.1:2)
     local η = xt[1] > 0.5 ? dot(aref1, x) :
         xt[2] > 1.0 ? dot(aref2, x) : 
         dot(aref3, x)
-    # local η = sin(xt[1]*7) + 2
-    PWAR.add_node!(graph, PWAR.Node(x, η))
+    local η = sin(xt[1]*7) + 2
+    push!(nodes, PWAR.Node(x, η))
 end
 
 fig0 = figure(0)
 ax0 = fig0.add_subplot(projection="3d")
-for node in graph.nodes
+for node in nodes
     ax0.plot(
         node.x[1], node.x[2], node.η, ls="none", marker=".", ms=5, c="tab:blue"
     )
@@ -38,7 +38,7 @@ end
 
 # local_L2_residual
 
-inodes_all = BitSet(1:length(graph))
+inodes_all = BitSet(1:length(nodes))
 σ = 0.05
 β = 1e-6
 
@@ -52,7 +52,7 @@ RES_ = fill(NaN, size(Xt_))
 
 for (k, xt) in enumerate(Xt_)
     local xc = [xt..., 1.0]
-    local res = PWAR.local_L2_residual(graph, inodes_all, xc, σ, β, 3)
+    local res = PWAR.local_L2_residual(nodes, inodes_all, xc, σ, β, 3)
     RES_[k] = sqrt(res)
 end
 
@@ -60,19 +60,28 @@ ax0.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
 
 # regions
 
-ϵ = 0.1
+ϵ = 0.15
 BD = 100
 γ = 0.01
 δ = 1e-5
-inodes_list = PWAR.maximal_regions(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-)
+# inodes_list = PWAR.maximal_regions(
+#     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
+# )
 inodes_list = PWAR.greedy_covering(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
+    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 inodes_list = PWAR.optimal_covering(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
+
+bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)
+inodes_list_opt = BitSet[]
+for (i, b) in enumerate(bs)
+    if round(Int, b) == 1
+        push!(inodes_list_opt, inodes_list[i])
+    end
+end
+inodes_list_opt
 
 fig1 = figure(1)
 ax1 = fig1.add_subplot(projection="3d")
@@ -83,7 +92,7 @@ for (k, inodes) in enumerate(inodes_list)
     local lb = fill(Inf, 2)
     local ub = fill(-Inf, 2)
     for inode in inodes
-        local x = graph.nodes[inode].x
+        local x = nodes[inode].x
         for k = 1:2
             if x[k] < lb[k]
                 lb[k] = x[k]
@@ -102,13 +111,13 @@ end
 
 nplot = 5
 
-for inodes in inodes_list
+for inodes in inodes_list_opt
     # optim parameters
     local model = solver()
     local a = @variable(model, [1:3], lower_bound=-BD, upper_bound=BD)
     local r = @variable(model, lower_bound=-1)
     for inode in inodes
-        local node = graph.nodes[inode]
+        local node = nodes[inode]
         @constraint(model, dot(a, node.x) ≤ node.η + r)
         @constraint(model, dot(a, node.x) ≥ node.η - r)
     end
@@ -121,7 +130,7 @@ for inodes in inodes_list
     local lb = fill(Inf, 2)
     local ub = fill(-Inf, 2)
     for inode in inodes
-        node = graph.nodes[inode]
+        node = nodes[inode]
         for k = 1:2
             if node.x[k] < lb[k]
                 lb[k] = node.x[k]
@@ -141,4 +150,6 @@ for inodes in inodes_list
 end
 
 ax0.view_init(elev=14, azim=-70)
-fig0.savefig("./examples/figures/pwa.png", bbox_inches="tight", dpi=100)
+fig0.savefig(
+    "./examples/figures/exa_synthetic2D.png", bbox_inches="tight", dpi=100
+)

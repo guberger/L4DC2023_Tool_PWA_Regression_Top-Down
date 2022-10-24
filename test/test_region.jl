@@ -14,13 +14,13 @@ solver() = Model(optimizer_with_attributes(
 ))
 
 NT = PWAR.Node{Vector{Float64},Float64}
-graph = PWAR.Graph(NT[])
+nodes = NT[]
 aref1 = [1, 2, 1]
 aref2 = [0, 2, 2]
 for xt in Iterators.product(0:0.2:1, 0:0.4:2)
     local x = vcat(collect(xt), 1.0)
     local η = xt[1] > 0.5 ? dot(aref1, x) : dot(aref2, x)
-    PWAR.add_node!(graph, PWAR.Node(x, η))
+    push!(nodes, PWAR.Node(x, η))
 end
 
 ϵ = 0.1
@@ -30,7 +30,7 @@ BD = 100
 σ = 0.2
 δ = 1e-5
 inodes_list = PWAR.maximal_regions(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
+    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 
 inodes_covered = BitSet()
@@ -39,7 +39,7 @@ for inodes in inodes_list
 end
 
 @testset "maximal_regions" begin
-    @test inodes_covered == BitSet(1:length(graph))
+    @test inodes_covered == BitSet(1:length(nodes))
 end
 
 ϵ = 0.1
@@ -48,8 +48,8 @@ BD = 100
 γ = 0.01
 σ = 0.2
 δ = 1e-5
-subgraphs = PWAR.greedy_covering(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver
+subnodess = PWAR.greedy_covering(
+    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
 )
 
 inodes_covered = BitSet()
@@ -58,7 +58,7 @@ for inodes in inodes_list
 end
 
 @testset "greedy_covering" begin
-    @test inodes_covered == BitSet(1:length(graph))
+    @test inodes_covered == BitSet(1:length(nodes))
 end
 
 ϵ = 0.1
@@ -67,8 +67,8 @@ BD = 100
 γ = 0.01
 σ = 0.2
 δ = 1e-5
-subgraphs = PWAR.optimal_covering(
-    graph, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+subnodess = PWAR.optimal_covering(
+    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
 
 inodes_covered = BitSet()
@@ -77,5 +77,5 @@ for inodes in inodes_list
 end
 
 @testset "optimal_covering" begin
-    @test inodes_covered == BitSet(1:length(graph))
+    @test inodes_covered == BitSet(1:length(nodes))
 end
