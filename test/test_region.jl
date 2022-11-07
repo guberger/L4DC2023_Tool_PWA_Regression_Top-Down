@@ -30,7 +30,7 @@ BD = 100
 σ = 0.2
 δ = 1e-5
 inodes_list = PWAR.optimal_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+    nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 
 inodes_covered = BitSet()
