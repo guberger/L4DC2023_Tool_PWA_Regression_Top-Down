@@ -127,14 +127,23 @@ struct Elem
     length::Int
 end
 
+function _add_elem!(elem_list, inodes_list_out, inodes)
+    any(
+        inodes_out -> inodes_out == inodes, inodes_list_out
+    ) && return nothing
+    any(
+        elem -> elem.inodes == inodes, elem_list
+    ) && return nothing
+    push!(elem_list, Elem(inodes, length(inodes)))
+    return nothing
+end
+
 """
-    optimal_covering(nodes, ϵ, BD, σ, β, γ, δ, N, solvers...)
+    optimal_covering(nodes, ϵ, BD, γ, δ, N, solvers...)
 
 `ϵ`: max error;
 `BD`: max value of system parameters;
 `γ`: 'gap' for max error;
-`σ`: radius for local residual;
-`β`: regularization parameter;
 `δ`: distance for certificate;
 `N`: variable dimension;
 `solver_F`: LP solver for feasibility
@@ -147,51 +156,53 @@ function optimal_covering(
     )
     nnode = length(nodes)
     elem_list_remain = [Elem(BitSet(1:nnode), nnode)]
-    inodes_list_found = BitSet[]
+    inodes_list_ko = BitSet[]
+    inodes_list_ok = BitSet[]
     inodes_list_all = BitSet[]
-    inodes_all = BitSet()
+    inodes_full = BitSet()
     ncov_lower::Int = 1
     ncov_upper::Int = nnode
     iter = 0
-    cover_with_found = false
+    cover_with_ok = false
     lower_bound_current = true
     while !isempty(elem_list_remain) && ncov_lower < ncov_upper
         iter += 1
         nremain = length(elem_list_remain)
         println(
             "iter: ", iter,
-            ". remain: ", nremain,
-            ". found: ", length(inodes_list_found),
-            ". ncov_lower: ", ncov_lower,
-            ". ncov_upper: ", ncov_upper
+            ". rem: ", nremain,
+            ". ok: ", length(inodes_list_ok),
+            ". ko: ", length(inodes_list_ko),
+            ". ↑: ", ncov_lower,
+            ". ↓: ", ncov_upper
         )
         ic = argmax(i -> elem_list_remain[i].length, 1:nremain)
         inodes = elem_list_remain[ic].inodes
         deleteat!(elem_list_remain, ic)
-        isempty(inodes) && continue
         # check if contained in a found subgraph
-        any(x -> inodes ⊆ x, inodes_list_found) && continue
+        any(x -> inodes ⊆ x, inodes_list_ok) && continue
         # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
-        # if yes, add subgraph to "found" and remove all previously found
+        # if yes, add subgraph to "ok" and remove all previously ok
         # subgraphs that are strictly contained in subgraph
         # finally, update upper bound on covering number
         res = LInf_residual(nodes, inodes, BD, N, solver_F)
         if res < ϵ*(1 + γ)
-            println("--> New found!")
-            filter!(x -> !(x ⊆ inodes), inodes_list_found)
-            push!(inodes_list_found, inodes)
+            println("--> New ok!")
+            filter!(x -> !(x ⊆ inodes), inodes_list_ok)
+            push!(inodes_list_ok, inodes)
             # update upper bound on covering number
-            union!(inodes_all, 1:nnode)
-            for inodes_found in inodes_list_found
-                setdiff!(inodes_all, inodes_found)
+            union!(inodes_full, 1:nnode)
+            for inodes_ok in inodes_list_ok
+                setdiff!(inodes_full, inodes_ok)
             end
-            cover_with_found = isempty(inodes_all)
-            if cover_with_found
-                bs = optimal_set_cover(nnode, inodes_list_found, solver_C)
+            cover_with_ok = isempty(inodes_full)
+            if cover_with_ok
+                bs = optimal_set_cover(nnode, inodes_list_ok, solver_C)
                 ncov_upper = sum(b -> round(Int, b), bs)
-                println("--> ncov_upper: ", ncov_upper)
+                println("--> ↓: ", ncov_upper)
             end
         else
+            push!(inodes_list_ko, inodes)
             # if no, find an infeasibility certificate
             inodes_cert = find_infeasibility_certificate(
                 nodes, inodes, ϵ, ϵ*(1 + γ/2), BD, N, solver_F, solver_I
@@ -201,26 +212,28 @@ function optimal_covering(
             # add maximal sub-rectangles breaking the infeasibility certificate
             for k = 1:N
                 inodes_new = filter(y -> nodes[y].x[k] < ub[k] - δ, inodes)
-                push!(elem_list_remain, Elem(inodes_new, length(inodes_new)))
+                _add_elem!(elem_list_remain, inodes_list_ko, inodes_new)
                 inodes_new = filter(y -> nodes[y].x[k] > lb[k] + δ, inodes)
-                push!(elem_list_remain, Elem(inodes_new, length(inodes_new)))
+                _add_elem!(elem_list_remain, inodes_list_ko, inodes_new)
             end
             lower_bound_current = false
         end
-        if cover_with_found && !lower_bound_current
+        if cover_with_ok && !lower_bound_current
             # update lower_bound on covering number
             empty!(inodes_list_all)
-            append!(inodes_list_all, inodes_list_found)
-            foreach(e -> push!(inodes_list_all, e.inodes), elem_list_remain)
+            append!(inodes_list_all, inodes_list_ok)
+            foreach(
+                elem -> push!(inodes_list_all, elem.inodes), elem_list_remain
+            )
             bs = optimal_set_cover(nnode, inodes_list_all, solver_C)
             ncov_lower = sum(b -> round(Int, b), bs)
-            println("--> ncov_lower: ", ncov_lower)
+            println("--> ↑: ", ncov_lower)
             lower_bound_current = true
         end
     end
     # Finished
-    println("rects found: ", length(inodes_list_found))
-    return inodes_list_found
+    println("rects found: ", length(inodes_list_ok))
+    return inodes_list_ok
 end
 
 end # module
