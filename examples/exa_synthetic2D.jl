@@ -16,19 +16,23 @@ solver() = Model(optimizer_with_attributes(
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-aref1 = [1, 2, 1]
-aref2 = [0, 2, 2]
-aref3 = [0, -2, 3]
-for xt in Iterators.product(-1:0.05:1, -2:0.1:2, (1.0,))
+aref1 = [1, 2, 0]
+aref2 = [0, 2, 0]
+aref3 = [0, -2, 2]
+aref4 = [1, 0, 2]
+for xt in Iterators.product(-1:0.05:1, -1:0.05:1, (1.0,))
     local x = collect(xt)
-    local η = max(abs(xt[1]) - 0.5*xt[3], 0) + abs(xt[2])
+    local η = xt[1] > 0.2 && xt[2] > -0.2 ? dot(aref1, x) :
+        xt[1] ≤ 0.2 && xt[2] > 0.2 ? dot(aref2, x) :
+        xt[1] ≤ -0.2 && xt[2] ≤ 0.2 ? dot(aref3, x) :
+        xt[1] > -0.2 && xt[2] ≤ -0.2 ? dot(aref4, x) : 3.0
     push!(nodes, PWAR.Node(x, η))
 end
 
-fig0 = figure(0)
-ax0 = fig0.add_subplot(projection="3d")
+fig = figure()
+ax = fig.add_subplot(projection="3d")
 for node in nodes
-    ax0.plot(
+    ax.plot(
         node.x[1], node.x[2], node.η, ls="none", marker=".", ms=5, c="tab:blue"
     )
 end
@@ -41,7 +45,7 @@ inodes_all = BitSet(1:length(nodes))
 
 nplot = 100
 x1_ = range(-1.1, 1.1, length=nplot)
-x2_ = range(-2.2, 2.2, length=nplot)
+x2_ = range(-1.1, 1.1, length=nplot)
 Xt_ = Iterators.product(x1_, x2_)
 X1_ = getindex.(Xt_, 1)
 X2_ = getindex.(Xt_, 2)
@@ -53,20 +57,16 @@ for (k, xt) in enumerate(Xt_)
     RES_[k] = sqrt(res)
 end
 
-ax0.contourf(X1_, X2_, RES_, zdir="z", offset=0.0)
+ax.contourf(X1_, X2_, RES_, zdir="z", offset=-1.01)
+
+# @assert false
 
 # regions
 
-ϵ = 0.05
+ϵ = 0.01
 BD = 100
 γ = 0.01
 δ = 1e-5
-# inodes_list = PWAR.maximal_regions(
-#     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-# )
-# inodes_list = PWAR.greedy_covering(
-#     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-# )
 inodes_list = PWAR.optimal_covering(
     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
@@ -80,8 +80,6 @@ for (i, b) in enumerate(bs)
 end
 inodes_list_opt
 
-fig1 = figure(1)
-ax1 = fig1.add_subplot(projection="3d")
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
 for (k, inodes) in enumerate(inodes_list)
@@ -101,7 +99,7 @@ for (k, inodes) in enumerate(inodes_list)
     end
     local x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
     local x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])
-    ax1.plot(x1rect, x2rect, k, c=c)
+    ax.plot(x1rect, x2rect, -1, c=c)
 end
 
 # Plot planes
@@ -143,10 +141,10 @@ for inodes in inodes_list_opt
     local X1_ = getindex.(Xt_, 1)
     local X2_ = getindex.(Xt_, 2)
     local Y_ = map(xt -> dot(a_opt, (xt..., 1.0)), Xt_)
-    ax0.plot_surface(X1_, X2_, Y_)
+    ax.plot_surface(X1_, X2_, Y_)
 end
 
-ax0.view_init(elev=14, azim=-70)
-fig0.savefig(
+ax.view_init(elev=14, azim=-70)
+fig.savefig(
     "./examples/figures/exa_synthetic2D.png", bbox_inches="tight", dpi=100
 )

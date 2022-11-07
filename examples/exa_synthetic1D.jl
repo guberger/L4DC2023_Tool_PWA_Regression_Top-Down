@@ -25,7 +25,8 @@ ax = fig.add_subplot()
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
 push!(nodes, PWAR.Node([0.0, 1.0], 0.0))
-for xt in Iterators.product(0.2:0.1:1, (1.0,))
+for xt in Iterators.product(0.2:0.2:1, (1.0,))
+# for xt in Iterators.product(0.2:0.1:1, (1.0,))
     for sg in (-1, 1)
         x = collect(xt.*(sg, 1))
         local η = F(x[1])
