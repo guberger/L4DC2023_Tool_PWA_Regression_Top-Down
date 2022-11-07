@@ -27,7 +27,7 @@ nodes = NT[]
 aref = [1, 2, 1]
 ν = 0.5
 for xt in Iterators.product(0:0.1:1, 0:0.2:2, (1.0,))
-    x = collect(xt)
+    local x = collect(xt)
     local η = xt[1] > 0.5 && xt[2] > 1.0 ? dot(aref, x) :
         xt[1] ≤ 0.5 && xt[2] > 1.0 ? ν :
         xt[1] > 0.5 && xt[2] ≤ 1.0 ? -ν :
@@ -60,14 +60,12 @@ fig.savefig(
     dpi=100
 )
 
-σ = 0.05
-β = 1e-6
 ϵ = 0.76*ν
 BD = 100
 γ = 0.01
 δ = 1e-5
 inodes_list = PWAR.optimal_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+    nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 
 bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)
@@ -157,7 +155,7 @@ ax.tick_params(axis="both", which="major", labelsize=15)
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
 for xt in Iterators.product(0:0.05:1, 0:0.2:2, (1.0,))
-    x = collect(xt)
+    local x = collect(xt)
     local η = sin(xt[1]*7) + 2*xt[3]
     push!(nodes, PWAR.Node(x, η))
 end
@@ -187,14 +185,12 @@ fig.savefig(
     dpi=100
 )
 
-σ = 0.05
-β = 1e-6
 ϵ = 0.15
 BD = 100
 γ = 0.01
 δ = 1e-5
 inodes_list = PWAR.optimal_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+    nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 
 bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)

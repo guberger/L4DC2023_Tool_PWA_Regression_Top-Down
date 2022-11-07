@@ -37,30 +37,6 @@ for node in nodes
     )
 end
 
-# local_L2_residual
-
-inodes_all = BitSet(1:length(nodes))
-σ = 0.05
-β = 1e-6
-
-nplot = 100
-x1_ = range(-1.1, 1.1, length=nplot)
-x2_ = range(-1.1, 1.1, length=nplot)
-Xt_ = Iterators.product(x1_, x2_)
-X1_ = getindex.(Xt_, 1)
-X2_ = getindex.(Xt_, 2)
-RES_ = fill(NaN, size(Xt_))
-
-for (k, xt) in enumerate(Xt_)
-    local xc = [xt..., 1.0]
-    local res = PWAR.local_L2_residual(nodes, inodes_all, xc, σ, β, 3)
-    RES_[k] = sqrt(res)
-end
-
-ax.contourf(X1_, X2_, RES_, zdir="z", offset=-1.01)
-
-# @assert false
-
 # regions
 
 ϵ = 0.01
@@ -68,7 +44,7 @@ BD = 100
 γ = 0.01
 δ = 1e-5
 inodes_list = PWAR.optimal_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
+    nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 
 bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)

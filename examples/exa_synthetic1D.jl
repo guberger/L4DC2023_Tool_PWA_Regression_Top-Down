@@ -26,9 +26,8 @@ NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
 push!(nodes, PWAR.Node([0.0, 1.0], 0.0))
 for xt in Iterators.product(0.2:0.2:1, (1.0,))
-# for xt in Iterators.product(0.2:0.1:1, (1.0,))
     for sg in (-1, 1)
-        x = collect(xt.*(sg, 1))
+        local x = collect(xt.*(sg, 1))
         local η = F(x[1])
         push!(nodes, PWAR.Node(x, η))
     end
@@ -42,14 +41,12 @@ for node in nodes
     ax.plot(node.x[1], node.η, ls="none", marker=".", ms=15, c="tab:blue")
 end
 
-σ = 0.05
-β = 1e-6
 ϵ = 0.1
 BD = 100
 γ = 0.01
 δ = 1e-5
 inodes_list = PWAR.optimal_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 2, solver, solver, solver
+    nodes, ϵ, BD, γ, δ, 2, solver, solver, solver
 )
 
 bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)

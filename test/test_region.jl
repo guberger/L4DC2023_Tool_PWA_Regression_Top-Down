@@ -29,45 +29,7 @@ BD = 100
 γ = 0.01
 σ = 0.2
 δ = 1e-5
-inodes_list = PWAR.maximal_regions(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-)
-
-inodes_covered = BitSet()
-for inodes in inodes_list
-    union!(inodes_covered, inodes)
-end
-
-@testset "maximal_regions" begin
-    @test inodes_covered == BitSet(1:length(nodes))
-end
-
-ϵ = 0.1
-BD = 100
-β = 1e-8
-γ = 0.01
-σ = 0.2
-δ = 1e-5
-subnodess = PWAR.greedy_covering(
-    nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver
-)
-
-inodes_covered = BitSet()
-for inodes in inodes_list
-    union!(inodes_covered, inodes)
-end
-
-@testset "greedy_covering" begin
-    @test inodes_covered == BitSet(1:length(nodes))
-end
-
-ϵ = 0.1
-BD = 100
-β = 1e-8
-γ = 0.01
-σ = 0.2
-δ = 1e-5
-subnodess = PWAR.optimal_covering(
+inodes_list = PWAR.optimal_covering(
     nodes, ϵ, BD, σ, β, γ, δ, 3, solver, solver, solver
 )
 
