@@ -23,7 +23,7 @@ ax = fig.add_subplot()
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-for xt in Iterators.product(-1:0.05:1, -2:0.1:2, (1.0,))
+for xt in Iterators.product(-1:0.2:1, -2:0.4:2, (1.0,))
     local x = collect(xt)
     local η = abs(xt[1] + 0.5)
     push!(nodes, PWAR.Node(x, η))
@@ -46,12 +46,22 @@ for (k, (xb, yb)) in enumerate(Iterators.product((-1, 1), (-2, 2)))
 end
 
 ϵ = 0.01
+θ = 0.1
 BD = 100
 γ = 0.01
 inodes_all = BitSet(1:length(nodes))
 
-inodes_cert = PWAR.find_infeasibility_certificate(
-    nodes, inodes_all, ϵ, ϵ*(1 + γ), BD, 3, solver, solver
+inode_center, λus, λls = PWAR.find_infeasibility_certificate(
+    nodes, inodes_all, ϵ*(1 + γ), 3, solver
+)
+
+inodes_cert = PWAR.extract_infeasibility_certificate(
+    nodes, inodes_all, λus, λls, ϵ, θ, BD, 3, solver
+)
+
+ax.plot(
+    nodes[inode_center].x[1], nodes[inode_center].x[2],
+    ls="none", marker=".", ms=10, c="tab:green"
 )
 
 for inode in inodes_cert

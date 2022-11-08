@@ -18,8 +18,8 @@ solver() = Model(optimizer_with_attributes(
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
 aref = [1, 2, 1]
-for xt in Iterators.product(0:0.1:1, 0:0.2:2)
-    local x = vcat(collect(xt), 1.0)
+for xt in Iterators.product(0:0.1:1, 0:0.2:2, (1.0,))
+    local x = collect(xt)
     local η = dot(aref, x)
     push!(nodes, PWAR.Node(x, η))
 end

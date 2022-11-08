@@ -28,7 +28,7 @@ end
 
 # Certificate
 
-function infeasibility_certificate(nodes, inodes, ϵ, xc, solver)
+function infeasibility_certificate(nodes, inodes, ϵ, xc, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -36,28 +36,67 @@ function infeasibility_certificate(nodes, inodes, ϵ, xc, solver)
     λls = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
     ) # lower bound : -a*x ≤ -y + ϵ
-    @constraint(model, sum(
-        (λus[inode] + λls[inode]) for inode in inodes
-    ) == 1)
-    @constraint(model, sum(
-        (λus[inode] - λls[inode])*nodes[inode].x
-        for inode in inodes
-    ) .== 0)
-    @constraint(model, sum(
-        (λus[inode] - λls[inode])*nodes[inode].η
-        for inode in inodes
-    ) ≤ -ϵ)
-    @objective(model, Min, sum(
-        (λus[inode] + λls[inode])*norm(nodes[inode].x - xc)^2
-        for inode in inodes
-    ))
+    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_1::AffExpr = AffExpr(0)
+    con_η::AffExpr = AffExpr(0)
+    obj::AffExpr = AffExpr(0)
+    for inode in inodes
+        con_x += (λus[inode] - λls[inode])*nodes[inode].x
+        con_1 += λus[inode] + λls[inode]
+        con_η += (λus[inode] - λls[inode])*nodes[inode].η
+        obj += (λus[inode] + λls[inode])*norm(nodes[inode].x - xc)^2
+    end
+    @constraint(model, con_x .== 0)
+    @constraint(model, con_1 == 1)
+    @constraint(model, con_η ≤ -ϵ)
+    @objective(model, Min, obj)
     optimize!(model)
     @assert termination_status(model) == OPTIMAL
     @assert primal_status(model) == FEASIBLE_POINT
     return (
+        objective_value(model),
         Dict(inode => value(λ) for (inode, λ) in λus),
         Dict(inode => value(λ) for (inode, λ) in λls)
     )
+end
+
+# Extract certificate
+
+function find_infeasibility_certificate(nodes, inodes, ϵ, N, solver)
+    obj_opt = Inf
+    inode_opt = 0
+    λus_opt = Dict{Int,Float64}()
+    λls_opt = Dict{Int,Float64}()
+    for inode in inodes
+        xc = nodes[inode].x
+        obj, λus, λls = infeasibility_certificate(
+            nodes, inodes, ϵ, xc, N, solver
+        )
+        if obj < obj_opt
+            inode_opt = inode
+            obj_opt = obj
+            λus_opt = λus
+            λls_opt = λls
+        end
+    end
+    return inode_opt, λus_opt, λls_opt
+end
+
+function extract_infeasibility_certificate(
+        nodes, inodes, λus, λls, ϵ, θ, BD, N, solver
+    )
+    # select certificate nodes (with `θ`)
+    inodes_cert = BitSet()
+    while true
+        for inode in inodes
+            max(λus[inode], λls[inode]) ≥ θ && push!(inodes_cert, inode)
+        end
+        # verify certificate
+        LInf_residual(
+            nodes, inodes_cert, BD, N, solver
+        ) > ϵ && return inodes_cert
+        θ /= 2
+    end
 end
 
 # MILP set cover
@@ -77,32 +116,6 @@ function optimal_set_cover(N, sets, solver)
     @assert termination_status(model) == OPTIMAL
     @assert primal_status(model) == FEASIBLE_POINT
     return value.(bs)    
-end
-
-# Extract certificate
-
-function find_infeasibility_certificate(
-        nodes, inodes, ϵ, ϵ_up, BD, N, solver_F, solver_I
-    )
-    xc = zeros(N)
-    for inode in inodes
-        xc += nodes[inode].x
-    end
-    xc /= length(inodes)
-    λus, λls = infeasibility_certificate(nodes, inodes, ϵ_up, xc, solver_I)
-    # select certificate nodes (with `θ`)
-    θ = 1/2
-    inodes_cert = BitSet()
-    while true
-        for inode in inodes
-            max(λus[inode], λls[inode]) ≥ θ && push!(inodes_cert, inode)
-        end
-        # verify certificate
-        LInf_residual(
-            nodes, inodes_cert, BD, N, solver_F
-        ) > ϵ && return inodes_cert
-        θ /= 2
-    end
 end
 
 function compute_lims(nodes, inodes, N)
