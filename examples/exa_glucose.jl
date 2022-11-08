@@ -16,9 +16,17 @@ solver() = Model(optimizer_with_attributes(
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-for xt in Iterators.product(-1:0.1:1, -1:0.1:1, (1.0,))
-    local x = collect(xt)
-    local η = max(0, abs(xt[1]) - 0.5, ) + min(0, 0.5 - abs(xt[2]))
+# step = 50
+# for xt in Iterators.product(-500:step:500, 0:step:1000, (1,))
+#     local x = Float64.(collect(xt))
+#     local η = (3.2667 + 0.0313*xt[1])*xt[2]/(253.52 + xt[2])
+#     push!(nodes, PWAR.Node(x, η))
+# end
+nsample = 400
+for isample = 1:nsample
+    local xt = (rand()*1000 - 500, rand()*1000, 1)
+    local x = Float64.(collect(xt))
+    local η = (3.2667 + 0.0313*xt[1])*xt[2]/(253.52 + xt[2])
     push!(nodes, PWAR.Node(x, η))
 end
 
@@ -32,7 +40,7 @@ end
 
 # regions
 
-ϵ = 0.01
+ϵ = 0.5
 BD = 100
 γ = 0.01
 δ = 1e-5
@@ -115,7 +123,7 @@ end
 
 ax.view_init(elev=14, azim=-70)
 fig.savefig(
-    "./examples/figures/exa_uniform2D.png", bbox_inches="tight", dpi=100
+    "./examples/figures/exa_glucose.png", bbox_inches="tight", dpi=100
 )
 
 # 3580 iter, 67 secs

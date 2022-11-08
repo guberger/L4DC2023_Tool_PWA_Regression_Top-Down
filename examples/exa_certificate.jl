@@ -25,7 +25,7 @@ NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
 for xt in Iterators.product(-1:0.05:1, -2:0.1:2, (1.0,))
     local x = collect(xt)
-    local η = abs(xt[1] + 0.5) + abs(xt[2] + 1)
+    local η = abs(xt[1] + 0.5)
     push!(nodes, PWAR.Node(x, η))
 end
 
