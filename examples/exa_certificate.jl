@@ -51,22 +51,38 @@ BD = 100
 γ = 0.01
 inodes_all = BitSet(1:length(nodes))
 
-inode_center, λus, λls = PWAR.find_infeasibility_certificate(
-    nodes, inodes_all, ϵ*(1 + γ), 3, solver
+xc = [-0.01, -0.01, 1.0]
+
+obj, λus, λls = PWAR.infeasibility_certificate_LP(
+    nodes, inodes_all, ϵ*(1 + γ), xc, 3, solver
 )
 
-inodes_cert = PWAR.extract_infeasibility_certificate(
+obj, bins = PWAR.infeasibility_certificate_MILP(
+    nodes, inodes_all, ϵ*(1 + γ), xc, 3, solver
+)
+
+inodes_cert_LP = PWAR.extract_infeasibility_certificate_LP(
     nodes, inodes_all, λus, λls, ϵ, θ, BD, 3, solver
 )
 
-ax.plot(
-    nodes[inode_center].x[1], nodes[inode_center].x[2],
-    ls="none", marker=".", ms=10, c="tab:green"
+inodes_cert_MILP = PWAR.extract_infeasibility_certificate_MILP(
+    inodes_all, bins, θ
 )
 
-for inode in inodes_cert
+ax.plot(
+    xc[1], xc[2], ls="none", marker=".", ms=20, c="tab:green"
+)
+
+for inode in inodes_cert_LP
     ax.plot(
         nodes[inode].x[1], nodes[inode].x[2],
-        ls="none", marker=".", ms=7.5, c="tab:red"
+        ls="none", marker="x", mew=2, ms=7.5, c="tab:red"
+    )
+end
+
+for inode in inodes_cert_MILP
+    ax.plot(
+        nodes[inode].x[1], nodes[inode].x[2],
+        ls="none", marker="+", mew=2, ms=7.5, c="tab:purple"
     )
 end

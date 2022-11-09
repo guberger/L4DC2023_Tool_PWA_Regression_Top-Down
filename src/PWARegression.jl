@@ -28,7 +28,7 @@ end
 
 # Certificate
 
-function infeasibility_certificate(nodes, inodes, ϵ, xc, N, solver)
+function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -60,29 +60,47 @@ function infeasibility_certificate(nodes, inodes, ϵ, xc, N, solver)
     )
 end
 
-# Extract certificate
-
-function find_infeasibility_certificate(nodes, inodes, ϵ, N, solver)
-    obj_opt = Inf
-    inode_opt = 0
-    λus_opt = Dict{Int,Float64}()
-    λls_opt = Dict{Int,Float64}()
+function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
+    model = solver()
+    λus = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # upper bound : a*x ≤ y + ϵ
+    λls = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # lower bound : -a*x ≤ -y + ϵ
+    bins = Dict(
+        inode => @variable(model, binary=true) for inode in inodes
+    )
+    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_1::AffExpr = AffExpr(0)
+    con_η::AffExpr = AffExpr(0)
+    con_bins::AffExpr = AffExpr(0)
+    obj::AffExpr = AffExpr(0)
     for inode in inodes
-        xc = nodes[inode].x
-        obj, λus, λls = infeasibility_certificate(
-            nodes, inodes, ϵ, xc, N, solver
-        )
-        if obj < obj_opt
-            inode_opt = inode
-            obj_opt = obj
-            λus_opt = λus
-            λls_opt = λls
-        end
+        con_x += (λus[inode] - λls[inode])*nodes[inode].x
+        con_1 += λus[inode] + λls[inode]
+        con_η += (λus[inode] - λls[inode])*nodes[inode].η
+        con_bins += bins[inode]
+        @constraint(model, bins[inode] ≥ (λus[inode] + λls[inode])/2)
+        obj += bins[inode]*norm(nodes[inode].x - xc)^2
     end
-    return inode_opt, λus_opt, λls_opt
+    @constraint(model, con_x .== 0)
+    @constraint(model, con_1 == 1)
+    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_bins ≤ N + 1)
+    @objective(model, Min, obj)
+    optimize!(model)
+    @assert termination_status(model) == OPTIMAL
+    @assert primal_status(model) == FEASIBLE_POINT
+    return (
+        objective_value(model),
+        Dict(inode => value(bin) for (inode, bin) in bins)
+    )
 end
 
-function extract_infeasibility_certificate(
+# Extract certificate
+
+function extract_infeasibility_certificate_LP(
         nodes, inodes, λus, λls, ϵ, θ, BD, N, solver
     )
     # select certificate nodes (with `θ`)
@@ -97,6 +115,19 @@ function extract_infeasibility_certificate(
         ) > ϵ && return inodes_cert
         θ /= 2
     end
+end
+
+function extract_infeasibility_certificate_MILP(inodes, bins, θ)
+    # select certificate nodes (with `θ`)
+    inodes_cert = BitSet()
+    for inode in inodes
+        bins[inode] ≥ θ && push!(inodes_cert, inode)
+    end
+    return inodes_cert
+end
+
+function compute()
+    
 end
 
 # MILP set cover
@@ -115,38 +146,46 @@ function optimal_set_cover(N, sets, solver)
     optimize!(model)
     @assert termination_status(model) == OPTIMAL
     @assert primal_status(model) == FEASIBLE_POINT
-    return value.(bs)    
+    return value.(bs)
 end
 
-function compute_lims(nodes, inodes, N)
+# Utils
+
+function compute_center(xlist, indices, N)
+    xc = zeros(N)
+    for index in indices
+        xc += xlist[index]
+    end
+    return xc/length(indices)
+end
+
+function compute_lims(xlist, indices, N)
     lb = fill(Inf, N)
     ub = fill(-Inf, N)
-    for inode in inodes
-        x = nodes[inode].x
+    for index in indices
         for k = 1:N
-            if x[k] < lb[k]
-                lb[k] = x[k]
+            if xlist[index][k] < lb[k]
+                lb[k] = xlist[index][k]
             end
-            if x[k] > ub[k]
-                ub[k] = x[k]
+            if xlist[index][k] > ub[k]
+                ub[k] = xlist[index][k]
             end
         end
     end
     return lb, ub
 end
 
+# Regions
+
 struct Elem
     inodes::BitSet
     length::Int
 end
 
-function _add_elem!(elem_list, inodes_list_out, inodes)
-    any(
-        inodes_out -> inodes_out == inodes, inodes_list_out
-    ) && return nothing
-    any(
-        elem -> elem.inodes == inodes, elem_list
-    ) && return nothing
+function _add_elem!(elem_list, inodes_list_ko, inodes_list_ok, inodes)
+    any(x -> x == inodes, inodes_list_ko) && return nothing
+    any(x -> x ⊇ inodes, inodes_list_ok) && return nothing
+    any(x -> x.inodes == inodes, elem_list) && return nothing
     push!(elem_list, Elem(inodes, length(inodes)))
     return nothing
 end
@@ -159,15 +198,16 @@ end
 `γ`: 'gap' for max error;
 `δ`: distance for certificate;
 `N`: variable dimension;
-`solver_F`: LP solver for feasibility
-`solver_I`: LP solver for infeasibility
-`solver_C`: MILP solver for cover
+`solver_F`: solver for feasibility
+`solver_I`: solver for infeasibility
+`solver_C`: solver for cover
 """
 function optimal_covering(
         nodes::Vector{<:Node}, ϵ, BD, γ, δ, N,
         solver_F, solver_I, solver_C
     )
     nnode = length(nodes)
+    xlist = map(node -> node.x, nodes)
     elem_list_remain = [Elem(BitSet(1:nnode), nnode)]
     inodes_list_ko = BitSet[]
     inodes_list_ok = BitSet[]
@@ -192,16 +232,18 @@ function optimal_covering(
         ic = argmax(i -> elem_list_remain[i].length, 1:nremain)
         inodes = elem_list_remain[ic].inodes
         deleteat!(elem_list_remain, ic)
-        # check if contained in a found subgraph
-        any(x -> inodes ⊆ x, inodes_list_ok) && continue
         # compute L∞ residual and check if ≤ relaxed tolerance `ϵ*(1 + γ)`
         # if yes, add subgraph to "ok" and remove all previously ok
         # subgraphs that are strictly contained in subgraph
         # finally, update upper bound on covering number
-        res = LInf_residual(nodes, inodes, BD, N, solver_F)
+        res = Inf
+        if all(x -> !(x ⊆ inodes), inodes_list_ko)
+            res = LInf_residual(nodes, inodes, BD, N, solver_F)
+        end
         if res < ϵ*(1 + γ)
             println("--> New ok!")
             filter!(x -> !(x ⊆ inodes), inodes_list_ok)
+            filter!(x -> !(x.inodes ⊆ inodes), elem_list_remain)
             push!(inodes_list_ok, inodes)
             # update upper bound on covering number
             union!(inodes_full, 1:nnode)
@@ -217,17 +259,26 @@ function optimal_covering(
         else
             push!(inodes_list_ko, inodes)
             # if no, find an infeasibility certificate
-            inodes_cert = find_infeasibility_certificate(
-                nodes, inodes, ϵ, ϵ*(1 + γ/2), BD, N, solver_F, solver_I
+            xc = compute_center(xlist, inodes, N)
+            bins = infeasibility_certificate_MILP(
+                nodes, inodes, ϵ*(1 + γ/2), xc, N, solver_I
+            )[2]
+            inodes_cert = extract_infeasibility_certificate_MILP(
+                inodes, bins, 0.5
             )
             # compute lims of infeasibility certificate
-            lb, ub = compute_lims(nodes, inodes_cert, N)
+            lb, ub = compute_lims(xlist, inodes_cert, N)
             # add maximal sub-rectangles breaking the infeasibility certificate
             for k = 1:N
-                inodes_new = filter(y -> nodes[y].x[k] < ub[k] - δ, inodes)
-                _add_elem!(elem_list_remain, inodes_list_ko, inodes_new)
-                inodes_new = filter(y -> nodes[y].x[k] > lb[k] + δ, inodes)
-                _add_elem!(elem_list_remain, inodes_list_ko, inodes_new)
+                for (s, b) in ((1, ub), (-1, lb))
+                    inodes_new = filter(
+                        y -> s*(nodes[y].x[k] - b[k]) + δ < 0, inodes
+                    )
+                    _add_elem!(
+                        elem_list_remain, inodes_list_ko,
+                        inodes_list_ok, inodes_new
+                    )
+                end
             end
             lower_bound_current = false
         end
@@ -235,9 +286,12 @@ function optimal_covering(
             # update lower_bound on covering number
             empty!(inodes_list_all)
             append!(inodes_list_all, inodes_list_ok)
-            foreach(
-                elem -> push!(inodes_list_all, elem.inodes), elem_list_remain
-            )
+            foreach(x -> push!(inodes_list_all, x.inodes), elem_list_remain)
+            print("--> # node = ", length(inodes_list_all))
+            for elem in elem_list_remain
+                filter!(x -> !(x ⊆ elem.inodes), inodes_list_all)
+            end
+            println(" - # node = ", length(inodes_list_all))
             bs = optimal_set_cover(nnode, inodes_list_all, solver_C)
             ncov_lower = sum(b -> round(Int, b), bs)
             println("--> ↑: ", ncov_lower)

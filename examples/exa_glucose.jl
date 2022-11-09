@@ -16,15 +16,14 @@ solver() = Model(optimizer_with_attributes(
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-# step = 50
-# for xt in Iterators.product(-500:step:500, 0:step:1000, (1,))
+# for xt in Iterators.product(0:300:4500, 0:100:1000, (1,))
 #     local x = Float64.(collect(xt))
 #     local η = (3.2667 + 0.0313*xt[1])*xt[2]/(253.52 + xt[2])
 #     push!(nodes, PWAR.Node(x, η))
 # end
-nsample = 400
+nsample = 100
 for isample = 1:nsample
-    local xt = (rand()*1000 - 500, rand()*1000, 1)
+    local xt = (rand()*500, rand()*1000, 1)
     local x = Float64.(collect(xt))
     local η = (3.2667 + 0.0313*xt[1])*xt[2]/(253.52 + xt[2])
     push!(nodes, PWAR.Node(x, η))
