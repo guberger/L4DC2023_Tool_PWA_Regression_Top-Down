@@ -75,7 +75,6 @@ for (i, b) in enumerate(bs)
         push!(inodes_list_opt, inodes_list[i])
     end
 end
-inodes_list_opt
 
 fig = figure()
 ax = fig.add_subplot(projection="3d")
@@ -200,7 +199,6 @@ for (i, b) in enumerate(bs)
         push!(inodes_list_opt, inodes_list[i])
     end
 end
-inodes_list_opt
 
 fig = figure()
 ax = fig.add_subplot(projection="3d")

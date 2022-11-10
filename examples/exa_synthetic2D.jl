@@ -54,7 +54,6 @@ for (i, b) in enumerate(bs)
         push!(inodes_list_opt, inodes_list[i])
     end
 end
-inodes_list_opt
 
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
