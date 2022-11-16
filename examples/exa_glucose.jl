@@ -9,22 +9,21 @@ Random.seed!(0)
 include("../src/PWARegression.jl")
 PWAR = PWARegression
 
-bbox_figs = ((1.7, 0.7), (5.2, 3.65))
+include("./utils.jl")
 
 const GUROBI_ENV = Gurobi.Env()
 solver() = Model(optimizer_with_attributes(
     () -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag"=>false
 ))
 
+colors = ("tab:blue", "tab:orange", "tab:green")
+
+bbox_figs = ((1.7, 0.7), (5.2, 3.65))
+
 UID(x1, x2) = (3.2667 + 0.0313*x1)*x2/(253.52 + x2)
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-# for xt in Iterators.product(0:300:4500, 0:100:1000, (1,))
-#     local x = Float64.(collect(xt))
-#     local η = (3.2667 + 0.0313*xt[1])*xt[2]/(253.52 + xt[2])
-#     push!(nodes, PWAR.Node(x, η))
-# end
 nsample = 100
 for isample = 1:nsample
     local xt = (rand()*50, rand()*200, 1)
@@ -33,6 +32,7 @@ for isample = 1:nsample
     local η = UID(xt[1], xt[2])
     push!(nodes, PWAR.Node(x, η))
 end
+xlist = map(node -> node.x, nodes)
 
 fig = figure()
 ax = fig.add_subplot(projection="3d")
@@ -70,7 +70,7 @@ fig.savefig(
 
 # regions
 
-ϵ = 0.05
+ϵ = 0.2
 BD = 100
 γ = 0.01
 δ = 1e-5
@@ -86,52 +86,25 @@ for (i, b) in enumerate(bs)
     end
 end
 
-# Plots
-
 fig = figure()
 ax = fig.add_subplot(projection="3d")
 
-for inodes in inodes_list_opt
-    # optim parameters
-    local model = solver()
-    local a = @variable(model, [1:3], lower_bound=-BD, upper_bound=BD)
-    local r = @variable(model, lower_bound=-1)
-    for inode in inodes
-        local node = nodes[inode]
-        @constraint(model, dot(a, node.x) ≤ node.η + r)
-        @constraint(model, dot(a, node.x) ≥ node.η - r)
-    end
-    @objective(model, Min, r)
-    optimize!(model)
-    @assert termination_status(model) == OPTIMAL
-    @assert primal_status(model) == FEASIBLE_POINT
-    local a_opt = value.(a)
+for (q, inodes) in enumerate(inodes_list_opt)
+    local a = minimax_regression(nodes, inodes, BD, 3, solver)
     # plot
-    local lb = fill(Inf, 2)
-    local ub = fill(-Inf, 2)
-    for inode in inodes
-        node = nodes[inode]
-        for k = 1:2
-            if node.x[k] < lb[k]
-                lb[k] = node.x[k]
-            end
-            if node.x[k] > ub[k]
-                ub[k] = node.x[k]
-            end
-        end
-    end
-    display((lb, ub))
-    display(a_opt)
+    local lb, ub = PWAR.compute_lims(xlist, inodes, 3)
     local x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
     local x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])
-    local p = ax.plot(x1rect, x2rect, 0)
+    ax.plot(x1rect, x2rect, 0, c=colors[q])
+    display((lb, ub))
+    display(a)
     local x1_ = (lb[1], ub[1])
     local x2_ = (lb[2], ub[2])
     local Xt_ = Iterators.product(x1_, x2_)
     local X1_ = getindex.(Xt_, 1)
     local X2_ = getindex.(Xt_, 2)
-    local Y_ = map(xt -> dot(a_opt, (xt..., 1.0)), Xt_)
-    ax.plot_surface(X1_, X2_, Y_, color=p[1].get_c(), lw=0, alpha=0.5)
+    local Y_ = map(xt -> dot(a, (xt..., 1.0)), Xt_)
+    ax.plot_surface(X1_, X2_, Y_, color=colors[q], lw=0, alpha=0.5)
 end
 
 for node in nodes
@@ -155,4 +128,41 @@ fig.savefig(
     bbox_inches=matplotlib.transforms.Bbox(bbox_figs), dpi=100
 )
 
-# 3580 iter, 67 secs
+# MILP
+
+ϵ = 0.05
+M = 3
+Γ = 1000*BD
+solver() = Model(optimizer_with_attributes(
+    () -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag"=>true, "TimeLimit" => 10
+))
+
+inodes_all = BitSet(eachindex(nodes))
+as, bins = switched_bounded_regression(
+    nodes, inodes_all, M, ϵ, BD, 3, Γ, solver
+)
+
+inodes_list_sw = [BitSet() for q in 1:M]
+for (inode, bin) in bins
+    for q in 1:M
+        if round(Int, bin[q]) == 1
+            push!(inodes_list_sw[q], inode)
+        end
+    end
+end
+
+fig = figure()
+ax = fig.add_subplot()
+
+for (q, inodes) in enumerate(inodes_list_sw)
+    for inode in inodes
+        local node = nodes[inode]
+        ax.plot(
+            node.x[1], node.x[2],
+            ls="none", marker=".", ms=10, c=colors[q]
+        )
+    end
+end
+
+ax.set_xlabel(L"x")
+ax.set_ylabel(L"y")

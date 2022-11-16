@@ -129,10 +129,6 @@ function extract_infeasibility_certificate_MILP(inodes, bins, θ)
     return inodes_cert
 end
 
-function compute()
-    
-end
-
 # MILP set cover
 
 function optimal_set_cover(N, sets, solver)

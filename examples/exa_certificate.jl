@@ -14,12 +14,7 @@ solver() = Model(optimizer_with_attributes(
     () -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag"=>false
 ))
 
-colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
-
 ## Piecewise
-
-fig = figure()
-ax = fig.add_subplot()
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
@@ -28,6 +23,9 @@ for xt in Iterators.product(-1:0.2:1, -2:0.4:2, (1.0,))
     local η = abs(xt[1] + 0.5)
     push!(nodes, PWAR.Node(x, η))
 end
+
+fig = figure()
+ax = fig.add_subplot()
 
 for node in nodes
     ax.plot(
@@ -39,7 +37,7 @@ end
 ax.set_xlabel(L"x_1")
 ax.set_ylabel(L"x_2")
 
-for (k, (xb, yb)) in enumerate(Iterators.product((-1, 1), (-2, 2)))
+for (xb, yb) in Iterators.product((-1, 1), (-2, 2))
     local x1rect = (xb, -0.5, -0.5, xb, xb)
     local x2rect = (yb, yb, -1, -1, yb)
     ax.plot(x1rect, x2rect, c="k")
