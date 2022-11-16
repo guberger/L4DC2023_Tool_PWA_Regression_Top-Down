@@ -90,12 +90,15 @@ function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
     @constraint(model, con_bins ≤ N + 1)
     @objective(model, Min, obj)
     optimize!(model)
-    @assert termination_status(model) == OPTIMAL
-    @assert primal_status(model) == FEASIBLE_POINT
-    return (
-        objective_value(model),
-        Dict(inode => value(bin) for (inode, bin) in bins)
-    )
+    if termination_status(model) == OPTIMAL
+        @assert primal_status(model) == FEASIBLE_POINT
+        return (
+            objective_value(model),
+            Dict(inode => value(bin) for (inode, bin) in bins)
+        )
+    end
+    @warn(termination_status(model))
+    return Inf, Dict(inode => 1 for (inode, bin) in bins)
 end
 
 # Extract certificate
@@ -260,6 +263,8 @@ function optimal_covering(
             push!(inodes_list_ko, inodes)
             # if no, find an infeasibility certificate
             xc = compute_center(xlist, inodes, N)
+            # TODO: add bound on affine function parameters in infeasibility
+            # certificate to ensure feasibility when res > ϵ
             bins = infeasibility_certificate_MILP(
                 nodes, inodes, ϵ*(1 + γ/2), xc, N, solver_I
             )[2]
@@ -289,7 +294,7 @@ function optimal_covering(
             foreach(x -> push!(inodes_list_all, x.inodes), elem_list_remain)
             print("--> # node = ", length(inodes_list_all))
             for elem in elem_list_remain
-                filter!(x -> !(x ⊆ elem.inodes), inodes_list_all)
+                filter!(x -> !(x ⊊ elem.inodes), inodes_list_all)
             end
             println(" - # node = ", length(inodes_list_all))
             bs = optimal_set_cover(nnode, inodes_list_all, solver_C)
