@@ -164,5 +164,17 @@ for (q, inodes) in enumerate(inodes_list_sw)
     end
 end
 
-ax.set_xlabel(L"x")
-ax.set_ylabel(L"y")
+ax.set_xlabel(L"x_1")
+ax.set_ylabel(L"x_2")
+
+hs = [
+    matplotlib.lines.Line2D(
+        (0,), (0,), ls="none", c=colors[q], marker=".", ms=10
+    ) for q in 1:M
+]
+ax.legend(hs, [string("cluster ", q) for q in 1:M])
+
+fig.savefig(
+    string("./examples/figures/exa_glucose_milp.png"),
+    bbox_inches="tight", dpi=100
+)
