@@ -10,6 +10,8 @@
 [codecov-img]: http://codecov.io/github/guberger/PWARegression_TopDown.jl/coverage.svg?branch=main
 [codecov-url]: http://codecov.io/github/guberger/PWARegression_TopDown.jl?branch=main
 
-![GUI](https://github.com/guberger/PWARegression_TopDown.jl/blob/main/pwa.png)
+![GUI](https://github.com/guberger/PWARegression_TopDown.jl/blob/main/exa_glucose_05.png)
+![GUI](https://github.com/guberger/PWARegression_TopDown.jl/blob/main/exa_uniform2D.png)
+![GUI](https://github.com/guberger/PWARegression_TopDown.jl/blob/main/exa_acrobot_regr.png)
 
 ## References
