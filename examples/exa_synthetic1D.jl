@@ -69,6 +69,8 @@ for (q, inodes) in enumerate(inodes_list_opt)
     local Xt_ = Iterators.product(x1_)
     local X1_ = getindex.(Xt_, 1)
     local Y_ = map(xt -> dot(a, (xt..., 1.0)), Xt_)
+    display((lb, ub))
+    display(a)
     ax.plot(X1_, Y_, lw=3, c=colors[q])
 end
 
