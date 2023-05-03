@@ -36,15 +36,29 @@ function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
     λls = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
     ) # lower bound : -a*x ≤ -y + ϵ
+    # con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    # con_1::AffExpr = AffExpr(0)
+    # con_η::AffExpr = AffExpr(0)
+    # obj::AffExpr = AffExpr(0)
+    # for inode in inodes
+    #     con_x += (λus[inode] - λls[inode])*nodes[inode].x
+    #     con_1 += λus[inode] + λls[inode]
+    #     con_η += (λus[inode] - λls[inode])*nodes[inode].η
+    #     obj += (λus[inode] + λls[inode])*norm(nodes[inode].x - xc)^2
+    # end
     con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
     con_1::AffExpr = AffExpr(0)
     con_η::AffExpr = AffExpr(0)
     obj::AffExpr = AffExpr(0)
     for inode in inodes
-        con_x += (λus[inode] - λls[inode])*nodes[inode].x
-        con_1 += λus[inode] + λls[inode]
-        con_η += (λus[inode] - λls[inode])*nodes[inode].η
-        obj += (λus[inode] + λls[inode])*norm(nodes[inode].x - xc)^2
+        λsum = λus[inode] + λls[inode]
+        λdif = λus[inode] - λls[inode]
+        for k = 1:N
+            add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
+        end
+        add_to_expression!(con_1, λsum)
+        add_to_expression!(con_η, λdif, nodes[inode].η)
+        add_to_expression!(obj, λsum, norm(nodes[inode].x - xc)^2)
     end
     @constraint(model, con_x .== 0)
     @constraint(model, con_1 == 1)
@@ -77,12 +91,128 @@ function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
     con_bins::AffExpr = AffExpr(0)
     obj::AffExpr = AffExpr(0)
     for inode in inodes
-        con_x += (λus[inode] - λls[inode])*nodes[inode].x
-        con_1 += λus[inode] + λls[inode]
-        con_η += (λus[inode] - λls[inode])*nodes[inode].η
-        con_bins += bins[inode]
-        @constraint(model, bins[inode] ≥ (λus[inode] + λls[inode])/2)
-        obj += bins[inode]*norm(nodes[inode].x - xc)^2
+        λsum = λus[inode] + λls[inode]
+        λdif = λus[inode] - λls[inode]
+        for k = 1:N
+            add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
+        end
+        add_to_expression!(con_1, λsum)
+        add_to_expression!(con_η, λdif, nodes[inode].η)
+        add_to_expression!(con_bins, bins[inode])
+        @constraint(model, bins[inode] ≥ λsum/2)
+        add_to_expression!(obj, bins[inode], norm(nodes[inode].x - xc)^2)
+    end
+    @constraint(model, con_x .== 0)
+    @constraint(model, con_1 == 1)
+    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_bins ≤ N + 1)
+    @objective(model, Min, obj)
+    optimize!(model)
+    if termination_status(model) == OPTIMAL
+        @assert primal_status(model) == FEASIBLE_POINT
+        return (
+            objective_value(model),
+            Dict(inode => value(bin) for (inode, bin) in bins)
+        )
+    end
+    @warn(termination_status(model))
+    return Inf, Dict(inode => 1 for (inode, bin) in bins)
+end
+
+# For tests: see example certificate center
+function infeasibility_certificate_MILP_prox(
+        nodes, inodes, ϵ, xc, μ, N, solver
+    )
+    model = solver()
+    λus = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # upper bound : a*x ≤ y + ϵ
+    λls = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # lower bound : -a*x ≤ -y + ϵ
+    bins = Dict(
+        inode => @variable(model, binary=true) for inode in inodes
+    )
+    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_1::AffExpr = AffExpr(0)
+    con_η::AffExpr = AffExpr(0)
+    con_bins::AffExpr = AffExpr(0)
+    obj_c::AffExpr = AffExpr(0) # center
+    obj_p::AffExpr = AffExpr(0) # proximity
+    jnodes = copy(inodes)
+    for inode in inodes
+        delete!(jnodes, inode)
+        λsum = λus[inode] + λls[inode]
+        λdif = λus[inode] - λls[inode]
+        for k = 1:N
+            add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
+        end
+        add_to_expression!(con_1, λsum)
+        add_to_expression!(con_η, λdif, nodes[inode].η)
+        add_to_expression!(con_bins, bins[inode])
+        @constraint(model, bins[inode] ≥ λsum/2)
+        add_to_expression!(obj_c, bins[inode], norm(nodes[inode].x - xc)^2)
+        for jnode in jnodes
+            t = @variable(model, lower_bound=0)
+            @constraint(model, t ≥ bins[inode] + bins[jnode] - 1)
+            add_to_expression!(
+                obj_p, t, norm(nodes[inode].x - nodes[jnode].x)^2
+            )
+        end
+    end
+    @constraint(model, con_x .== 0)
+    @constraint(model, con_1 == 1)
+    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_bins ≤ N + 1)
+    @objective(model, Min, obj_c*μ + obj_p)
+    optimize!(model)
+    if termination_status(model) == OPTIMAL
+        @assert primal_status(model) == FEASIBLE_POINT
+        return (
+            objective_value(model),
+            Dict(inode => value(bin) for (inode, bin) in bins)
+        )
+    end
+    @warn(termination_status(model))
+    return Inf, Dict(inode => 1 for (inode, bin) in bins)
+end
+
+# For tests: see example certificate center
+function infeasibility_certificate_MILP_radius(
+        nodes, inodes, ϵ, xc, ρ, N, solver
+    )
+    model = solver()
+    λus = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # upper bound : a*x ≤ y + ϵ
+    λls = Dict(
+        inode => @variable(model, lower_bound=0) for inode in inodes
+    ) # lower bound : -a*x ≤ -y + ϵ
+    bins = Dict(
+        inode => @variable(model, binary=true) for inode in inodes
+    )
+    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_1::AffExpr = AffExpr(0)
+    con_η::AffExpr = AffExpr(0)
+    con_bins::AffExpr = AffExpr(0)
+    obj::AffExpr = AffExpr(0)
+    jnodes = copy(inodes)
+    for inode in inodes
+        delete!(jnodes, inode)
+        λsum = λus[inode] + λls[inode]
+        λdif = λus[inode] - λls[inode]
+        for k = 1:N
+            add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
+        end
+        add_to_expression!(con_1, λsum)
+        add_to_expression!(con_η, λdif, nodes[inode].η)
+        add_to_expression!(con_bins, bins[inode])
+        @constraint(model, bins[inode] ≥ λsum/2)
+        add_to_expression!(obj, bins[inode], norm(nodes[inode].x - xc)^2)
+        for jnode in jnodes
+            norm(nodes[inode].x - nodes[jnode].x) ≤ ρ && continue
+            @constraint(model, bins[inode] + bins[jnode] ≤ 1)
+        end
     end
     @constraint(model, con_x .== 0)
     @constraint(model, con_1 == 1)
