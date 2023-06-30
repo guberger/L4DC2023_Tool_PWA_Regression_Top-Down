@@ -23,11 +23,9 @@ bbox_figs = ((1.7, 0.75), (5.35, 3.65))
 
 NT = PWAR.Node{Vector{Float64},Float64}
 nodes = NT[]
-for xt in Iterators.product(0:0.05:1, 0:0.05:1, (1.0,))
+for xt in Iterators.product(0:0.01:1, 0:0.01:1, (1.0,))
     local x = collect(xt)
-    local η = xt[1] > 0.25 && xt[2] > 0.25 ? 1.0 :
-        xt[1] ≤ 0.25 && xt[2] > 0.25 ? 2.0 :
-        xt[1] > 0.25 && xt[2] ≤ 0.25 ? 3.0 : 4.0
+    local η = (0.15 < xt[1] < 0.84) && (0.1 < xt[2] < 0.9) ? 1.0 : rand()
     push!(nodes, PWAR.Node(x, η))
 end
 xlist = map(node -> node.x, nodes)
@@ -45,7 +43,7 @@ N = 3
 xlist = map(node -> node.x, nodes)
 inodes = BitSet(1:length(nodes))
 ϵ = 0.01
-meth = 4
+meth = 1
 
 xc = PWAR.compute_center(xlist, inodes, N)
 if meth == 1
