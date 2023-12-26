@@ -1,10 +1,9 @@
-using Random
+module Example
+
 using LinearAlgebra
 using JuMP
 using Gurobi
 using PyPlot
-
-Random.seed!(0)
 
 include("../src/PWARegression.jl")
 PWAR = PWARegression
@@ -12,9 +11,8 @@ PWAR = PWARegression
 include("./utils.jl")
 
 const GUROBI_ENV = Gurobi.Env()
-solver() = Model(optimizer_with_attributes(
-    () -> Gurobi.Optimizer(GUROBI_ENV), "OutputFlag"=>false
-))
+gurobi_() = Gurobi.Optimizer(GUROBI_ENV)
+solver() = Model(optimizer_with_attributes(gurobi_, MOI.Silent()=>true))
 
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
@@ -73,3 +71,5 @@ ax.view_init(elev=14, azim=-70)
 fig.savefig(
     "./examples/figures/exa_uniform2D.png", bbox_inches="tight", dpi=100
 )
+
+end # module
