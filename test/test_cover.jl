@@ -1,3 +1,5 @@
+module MyTest
+
 using LinearAlgebra
 using JuMP
 using HiGHS
@@ -49,3 +51,5 @@ bs = PWAR.optimal_set_cover(N, sets, solver)
     @test sum(bs) ≈ 1
     @test bs[N] ≈ 1
 end
+
+end # module

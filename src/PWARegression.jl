@@ -3,21 +3,21 @@ module PWARegression
 using LinearAlgebra
 using JuMP
 
-struct Node{XT<:AbstractVector,HT}
+struct Node{XT<:AbstractVector,YT<:AbstractVector}
     x::XT
-    η::HT
+    y::YT
 end
 
 # Residuals
 
-function LInf_residual(nodes, inodes, BD, N, solver)
+function LInf_residual(nodes, inodes, BD, M, N, solver)
     model = solver()
-    a = @variable(model, [1:N], lower_bound=-BD, upper_bound=BD)
+    A = @variable(model, [1:M, 1:N], lower_bound=-BD, upper_bound=BD)
     r = @variable(model, lower_bound=-1)
     for inode in inodes
         node = nodes[inode]
-        @constraint(model, dot(a, node.x) ≤ node.η + r)
-        @constraint(model, dot(a, node.x) ≥ node.η - r)
+        @constraint(model, A * node.x .≤ node.y .+ r)
+        @constraint(model, A * node.x .≥ node.y .- r)
     end
     @objective(model, Min, r)
     optimize!(model)
@@ -28,7 +28,7 @@ end
 
 # Certificate
 
-function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
+function certificate_LP(nodes, inodes, ϵ, xc, M, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -46,9 +46,9 @@ function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
     #     con_η += (λus[inode] - λls[inode])*nodes[inode].η
     #     obj += (λus[inode] + λls[inode])*norm(nodes[inode].x - xc)^2
     # end
-    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_x::Vector{AffExpr} = [AffExpr(0) for _ in 1:N]
+    con_y::Vector{AffExpr} = [AffExpr(0) for _ in 1:M]
     con_1::AffExpr = AffExpr(0)
-    con_η::AffExpr = AffExpr(0)
     obj::AffExpr = AffExpr(0)
     for inode in inodes
         λsum = λus[inode] + λls[inode]
@@ -57,12 +57,14 @@ function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
             add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
         end
         add_to_expression!(con_1, λsum)
-        add_to_expression!(con_η, λdif, nodes[inode].η)
+        for k = 1:M
+            add_to_expression!(con_y[k], λdif, nodes[inode].y[k])
+        end
         add_to_expression!(obj, λsum, norm(nodes[inode].x - xc)^2)
     end
     @constraint(model, con_x .== 0)
     @constraint(model, con_1 == 1)
-    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_y .≤ -ϵ)
     @objective(model, Min, obj)
     optimize!(model)
     @assert termination_status(model) == OPTIMAL
@@ -74,7 +76,7 @@ function infeasibility_certificate_LP(nodes, inodes, ϵ, xc, N, solver)
     )
 end
 
-function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
+function certificate_MILP(nodes, inodes, ϵ, xc, M, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -85,9 +87,9 @@ function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
     bins = Dict(
         inode => @variable(model, binary=true) for inode in inodes
     )
-    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_x::Vector{AffExpr} = [AffExpr(0) for _ in 1:N]
+    con_y::Vector{AffExpr} = [AffExpr(0) for _ in 1:M]
     con_1::AffExpr = AffExpr(0)
-    con_η::AffExpr = AffExpr(0)
     con_bins::AffExpr = AffExpr(0)
     obj::AffExpr = AffExpr(0)
     for inode in inodes
@@ -97,14 +99,16 @@ function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
             add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
         end
         add_to_expression!(con_1, λsum)
-        add_to_expression!(con_η, λdif, nodes[inode].η)
+        for k = 1:M
+            add_to_expression!(con_y[k], λdif, nodes[inode].y[k])
+        end
         add_to_expression!(con_bins, bins[inode])
-        @constraint(model, bins[inode] ≥ λsum/2)
+        @constraint(model, bins[inode] ≥ λsum / 2)
         add_to_expression!(obj, bins[inode], norm(nodes[inode].x - xc)^2)
     end
     @constraint(model, con_x .== 0)
     @constraint(model, con_1 == 1)
-    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_y .≤ -ϵ)
     @constraint(model, con_bins ≤ N + 1)
     @objective(model, Min, obj)
     optimize!(model)
@@ -120,9 +124,7 @@ function infeasibility_certificate_MILP(nodes, inodes, ϵ, xc, N, solver)
 end
 
 # For tests: see example certificate center
-function infeasibility_certificate_MILP_prox(
-        nodes, inodes, ϵ, xc, μ, N, solver
-    )
+function certificate_MILP_prox(nodes, inodes, ϵ, xc, μ, M, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -133,9 +135,9 @@ function infeasibility_certificate_MILP_prox(
     bins = Dict(
         inode => @variable(model, binary=true) for inode in inodes
     )
-    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_x::Vector{AffExpr} = [AffExpr(0) for _ in 1:N]
+    con_y::Vector{AffExpr} = [AffExpr(0) for _ in 1:M]
     con_1::AffExpr = AffExpr(0)
-    con_η::AffExpr = AffExpr(0)
     con_bins::AffExpr = AffExpr(0)
     obj_c::AffExpr = AffExpr(0) # center
     obj_p::AffExpr = AffExpr(0) # proximity
@@ -148,9 +150,11 @@ function infeasibility_certificate_MILP_prox(
             add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
         end
         add_to_expression!(con_1, λsum)
-        add_to_expression!(con_η, λdif, nodes[inode].η)
+        for k = 1:M
+            add_to_expression!(con_y[k], λdif, nodes[inode].y[k])
+        end
         add_to_expression!(con_bins, bins[inode])
-        @constraint(model, bins[inode] ≥ λsum/2)
+        @constraint(model, bins[inode] ≥ λsum / 2)
         add_to_expression!(obj_c, bins[inode], norm(nodes[inode].x - xc)^2)
         for jnode in jnodes
             t = @variable(model, lower_bound=0)
@@ -162,7 +166,7 @@ function infeasibility_certificate_MILP_prox(
     end
     @constraint(model, con_x .== 0)
     @constraint(model, con_1 == 1)
-    @constraint(model, con_η ≤ -ϵ)
+    @constraint(model, con_y .≤ -ϵ)
     @constraint(model, con_bins ≤ N + 1)
     @objective(model, Min, obj_c*μ + obj_p)
     optimize!(model)
@@ -178,9 +182,7 @@ function infeasibility_certificate_MILP_prox(
 end
 
 # For tests: see example certificate center
-function infeasibility_certificate_MILP_radius(
-        nodes, inodes, ϵ, xc, ρ, N, solver
-    )
+function certificate_MILP_radius(nodes, inodes, ϵ, xc, ρ, M, N, solver)
     model = solver()
     λus = Dict(
         inode => @variable(model, lower_bound=0) for inode in inodes
@@ -191,9 +193,9 @@ function infeasibility_certificate_MILP_radius(
     bins = Dict(
         inode => @variable(model, binary=true) for inode in inodes
     )
-    con_x::Vector{AffExpr} = [AffExpr(0) for k in 1:N]
+    con_x::Vector{AffExpr} = [AffExpr(0) for _ in 1:N]
+    con_y::Vector{AffExpr} = [AffExpr(0) for _ in 1:M]
     con_1::AffExpr = AffExpr(0)
-    con_η::AffExpr = AffExpr(0)
     con_bins::AffExpr = AffExpr(0)
     obj::AffExpr = AffExpr(0)
     jnodes = copy(inodes)
@@ -205,9 +207,11 @@ function infeasibility_certificate_MILP_radius(
             add_to_expression!(con_x[k], λdif, nodes[inode].x[k])
         end
         add_to_expression!(con_1, λsum)
-        add_to_expression!(con_η, λdif, nodes[inode].η)
+        for k = 1:M
+            add_to_expression!(con_y[k], λdif, nodes[inode].y[k])
+        end
         add_to_expression!(con_bins, bins[inode])
-        @constraint(model, bins[inode] ≥ λsum/2)
+        @constraint(model, bins[inode] ≥ λsum / 2)
         add_to_expression!(obj, bins[inode], norm(nodes[inode].x - xc)^2)
         for jnode in jnodes
             norm(nodes[inode].x - nodes[jnode].x) ≤ ρ && continue
@@ -233,9 +237,7 @@ end
 
 # Extract certificate
 
-function extract_infeasibility_certificate_LP(
-        nodes, inodes, λus, λls, ϵ, θ, BD, N, solver
-    )
+function extract_certificate_LP(nodes, inodes, λus, λls, ϵ, θ, BD, M, N, solver)
     # select certificate nodes (with `θ`)
     inodes_cert = BitSet()
     while true
@@ -243,14 +245,15 @@ function extract_infeasibility_certificate_LP(
             max(λus[inode], λls[inode]) ≥ θ && push!(inodes_cert, inode)
         end
         # verify certificate
-        LInf_residual(
-            nodes, inodes_cert, BD, N, solver
-        ) > ϵ && return inodes_cert
+        res = LInf_residual(nodes, inodes_cert, BD, M, N, solver)
+        if res > ϵ
+            return inodes_cert
+        end
         θ /= 2
     end
 end
 
-function extract_infeasibility_certificate_MILP(inodes, bins, θ)
+function extract_certificate_MILP(inodes, bins, θ)
     # select certificate nodes (with `θ`)
     inodes_cert = BitSet()
     for inode in inodes
@@ -280,28 +283,22 @@ end
 
 # Utils
 
-function compute_center(xlist, indices, N)
-    xc = zeros(N)
+function compute_center!(xlist, indices, xc)
     for index in indices
-        xc += xlist[index]
-    end
-    return xc/length(indices)
-end
-
-function compute_lims(xlist, indices, N)
-    lb = fill(Inf, N)
-    ub = fill(-Inf, N)
-    for index in indices
-        for k = 1:N
-            if xlist[index][k] < lb[k]
-                lb[k] = xlist[index][k]
-            end
-            if xlist[index][k] > ub[k]
-                ub[k] = xlist[index][k]
-            end
+        for k in eachindex(xc)
+            xc[k] += xlist[index][k]
         end
     end
-    return lb, ub
+    return xc / length(indices)
+end
+
+function compute_lims(xlist, indices, Atemp)
+    ctemp = fill(-Inf, size(Atemp, 1))
+    for index in indices
+        c = Atemp * xlist[index]
+        ctemp = max.(ctemp, c)
+    end
+    return ctemp
 end
 
 # Regions
@@ -331,10 +328,8 @@ end
 `solver_I`: solver for infeasibility
 `solver_C`: solver for cover
 """
-function optimal_covering(
-        nodes::Vector{<:Node}, ϵ, BD, γ, δ, N,
-        solver_F, solver_I, solver_C
-    )
+function optimal_covering(nodes::Vector{<:Node}, ϵ, BD, γ, δ, M, N, Atemp,
+                          solver_F, solver_I, solver_C)
     nnode = length(nodes)
     xlist = map(node -> node.x, nodes)
     elem_list_remain = [Elem(BitSet(1:nnode), nnode)]
@@ -347,6 +342,7 @@ function optimal_covering(
     iter = 0
     cover_with_ok = false
     lower_bound_current = true
+    xc = zeros(N)
     while !isempty(elem_list_remain) && ncov_lower < ncov_upper
         iter += 1
         nremain = length(elem_list_remain)
@@ -367,7 +363,7 @@ function optimal_covering(
         # finally, update upper bound on covering number
         res = Inf
         if all(x -> !(x ⊆ inodes), inodes_list_ko)
-            res = LInf_residual(nodes, inodes, BD, N, solver_F)
+            res = LInf_residual(nodes, inodes, BD, M, N, solver_F)
         end
         if res < ϵ*(1 + γ)
             println("--> New ok!")
@@ -388,28 +384,21 @@ function optimal_covering(
         else
             push!(inodes_list_ko, inodes)
             # if no, find an infeasibility certificate
-            xc = compute_center(xlist, inodes, N)
+            fill!(xc, 0)
+            xc = compute_center!(xlist, inodes, xc)
             # TODO: add bound on affine function parameters in infeasibility
             # certificate to ensure feasibility when res > ϵ
-            bins = infeasibility_certificate_MILP(
-                nodes, inodes, ϵ*(1 + γ/2), xc, N, solver_I
-            )[2]
-            inodes_cert = extract_infeasibility_certificate_MILP(
-                inodes, bins, 0.5
-            )
+            _, bins = certificate_MILP(nodes, inodes, ϵ*(1 + γ/2),
+                                       xc, M, N, solver_I)
+            inodes_cert = extract_certificate_MILP(inodes, bins, 0.5)
             # compute lims of infeasibility certificate
-            lb, ub = compute_lims(xlist, inodes_cert, N)
+            ctemp = compute_lims(xlist, inodes_cert, Atemp)
             # add maximal sub-rectangles breaking the infeasibility certificate
-            for k = 1:N
-                for (s, b) in ((1, ub), (-1, lb))
-                    inodes_new = filter(
-                        y -> s*(nodes[y].x[k] - b[k]) + δ < 0, inodes
-                    )
-                    _add_elem!(
-                        elem_list_remain, inodes_list_ko,
-                        inodes_list_ok, inodes_new
-                    )
-                end
+            for (a, b) in zip(eachrow(Atemp), ctemp)
+                is_in(x) = dot(a, x) < b - δ
+                inodes_new = filter(inode -> is_in(nodes[inode].x), inodes)
+                _add_elem!(elem_list_remain, inodes_list_ko,
+                           inodes_list_ok, inodes_new)
             end
             lower_bound_current = false
         end

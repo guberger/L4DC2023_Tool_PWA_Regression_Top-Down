@@ -1,3 +1,5 @@
+module MyTest
+
 using LinearAlgebra
 using JuMP
 using HiGHS
@@ -15,20 +17,23 @@ solver() = Model(optimizer_with_attributes(
 
 xlist = [[100, 1000], [7, 2], [2, 3], [4, 5], [3, 6], [-100, 1000]]
 
-xc = PWAR.compute_center(xlist, 1:length(xlist), 2)
-lb, ub = PWAR.compute_lims(xlist, 1:length(xlist), 2)
+xc = zeros(2)
+xc = PWAR.compute_center!(xlist, 1:length(xlist), xc)
+Atemp = [1 0; 0 1; -1 0; 0 -1]
+ctemp = PWAR.compute_lims(xlist, 1:length(xlist), Atemp)
 
 @testset "utils: all" begin
     @test xc ≈ [8/3, 1008/3]
-    @test lb ≈ [-100, 2]
-    @test ub ≈ [100, 1000]
+    @test ctemp ≈ [100, 1000, 100, -2]
 end
 
-xc = PWAR.compute_center(xlist, 2:5, 2)
-lb, ub = PWAR.compute_lims(xlist, 2:5, 2)
+fill!(xc, 0)
+xc = PWAR.compute_center!(xlist, 2:5, xc)
+ctemp = PWAR.compute_lims(xlist, 2:5, Atemp)
 
 @testset "utils: subset" begin
     @test xc ≈ [4, 4]
-    @test lb ≈ [2, 2]
-    @test ub ≈ [7, 6]
+    @test ctemp ≈ [7, 6, -2, -2]
 end
+
+end # module
