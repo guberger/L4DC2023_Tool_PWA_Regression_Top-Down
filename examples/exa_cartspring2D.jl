@@ -49,6 +49,7 @@ BD = 100
 δ = 1e-5
 Atemp = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 -1 0; -1 1 0; 1 1 0; -1 -1 0]
 Atemp = [1 0 0; -1 0 0; 1 -1 0; -1 1 0]
+# Atemp = [1 0 0; -1 0 0; 0 -1 0; 0 1 0]
 inodes_list = @time PWAR.optimal_covering(nodes, ϵ, BD, γ, δ, 1, 3, Atemp,
                                           solver, solver, solver)
 
@@ -83,17 +84,21 @@ function model_val(x)
             q_opt = q
         end
     end
-    return q_opt, A_list[q_opt] * x
+    return A_list[q_opt] * x
 end
+
+model_dist(x, q) = maximum(Atemp * x - ctemp_list[q])
 
 subs = range(0, L, length=500)
 Xt_ = Iterators.product(subs, subs)
 X1_ = getindex.(Xt_, 1)
 X2_ = getindex.(Xt_, 2)
-Y_ = map(xt -> model_val([xt..., 1.0])[2][1], Xt_)
-h = ax.contourf(X1_, X2_, Y_, levels=20, cmap=matplotlib.cm.coolwarm)
 Y_ = map(xt -> model_val([xt..., 1.0])[1], Xt_)
-ax.contour(X1_, X2_, Y_, colors="black")
+h = ax.contourf(X1_, X2_, Y_, levels=20, cmap=matplotlib.cm.coolwarm)
+for q in eachindex(inodes_list_opt)
+    Y_ = map(xt -> model_dist([xt..., 1.0], q), Xt_)
+    ax.contour(X1_, X2_, Y_, levels=[0.1], colors="black")
+end
 fig.colorbar(h)
 
 
