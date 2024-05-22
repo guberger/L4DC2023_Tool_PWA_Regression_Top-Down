@@ -5,8 +5,8 @@ using JuMP
 using Gurobi
 using PyPlot
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 include("./utils.jl")
 
@@ -16,7 +16,7 @@ solver() = Model(optimizer_with_attributes(gurobi_, MOI.Silent()=>true))
 
 colors = repeat(collect(keys(matplotlib.colors.TABLEAU_COLORS)), 100)
 
-NT = PWAR.Node{Vector{Float64},Vector{Float64}}
+NT = TK.Node{Vector{Float64},Vector{Float64}}
 nodes = NT[]
 L = 5
 k = 1
@@ -30,7 +30,7 @@ for xt in Iterators.product(subs, subs, (1.0,))
     u2l = max(0, -k * δ)
     u2r = min(0, k * (x[2] - d))
     y = [u1l + u1r]
-    push!(nodes, PWAR.Node(x, y))
+    push!(nodes, TK.Node(x, y))
 end
 xlist = map(node -> node.x, nodes)
 
@@ -50,10 +50,10 @@ BD = 100
 Atemp = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 -1 0; -1 1 0; 1 1 0; -1 -1 0]
 Atemp = [1 0 0; -1 0 0; 1 -1 0; -1 1 0]
 # Atemp = [1 0 0; -1 0 0; 0 -1 0; 0 1 0]
-inodes_list = @time PWAR.optimal_covering(nodes, ϵ, BD, γ, δ, 1, 3, Atemp,
+inodes_list = @time TK.optimal_covering(nodes, ϵ, BD, γ, δ, 1, 3, Atemp,
                                           solver, solver, solver)
 
-bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)
+bs = TK.optimal_set_cover(length(nodes), inodes_list, solver)
 inodes_list_opt = BitSet[]
 for (i, b) in enumerate(bs)
     if round(Int, b) == 1
@@ -68,7 +68,7 @@ A_list = [zeros(1, 3) for _ in inodes_list_opt]
 ctemp_list = [zeros(size(Atemp, 1)) for _ in inodes_list_opt]
 for (q, inodes) in enumerate(inodes_list_opt)
     A = minimax_regression(nodes, inodes, BD, 1, 3, solver)
-    ctemp = PWAR.compute_lims(xlist, inodes, Atemp)
+    ctemp = TK.compute_lims(xlist, inodes, Atemp)
     A_list[q] = A
     ctemp_list[q] = ctemp
 end
@@ -106,7 +106,7 @@ fig.colorbar(h)
 #     a = minimax_regression(nodes, inodes, BD, 1, 3, solver)
 #     # plot
 #     Atemp = [1 0 0; 0 1 0; -1 0 0; 0 -1 0]
-#     ctemp = PWAR.compute_lims(xlist, inodes, Atemp)
+#     ctemp = TK.compute_lims(xlist, inodes, Atemp)
 #     ub, lb = ctemp[1:2], -ctemp[3:4]
 #     x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
 #     x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])

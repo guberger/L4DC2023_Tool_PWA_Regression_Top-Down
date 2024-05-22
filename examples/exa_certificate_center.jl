@@ -8,8 +8,8 @@ using PyPlot
 
 Random.seed!(0)
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 include("./utils.jl")
 
@@ -21,12 +21,12 @@ bbox_figs = ((1.7, 0.75), (5.35, 3.65))
 
 ## Piecewise
 
-NT = PWAR.Node{Vector{Float64},Float64}
+NT = TK.Node{Vector{Float64},Float64}
 nodes = NT[]
 for xt in Iterators.product(0:0.01:1, 0:0.01:1, (1.0,))
     local x = collect(xt)
     local η = (0.15 < xt[1] < 0.84) && (0.1 < xt[2] < 0.9) ? 1.0 : rand()
-    push!(nodes, PWAR.Node(x, η))
+    push!(nodes, TK.Node(x, η))
 end
 xlist = map(node -> node.x, nodes)
 
@@ -45,23 +45,23 @@ inodes = BitSet(1:length(nodes))
 ϵ = 0.01
 meth = 1
 
-xc = PWAR.compute_center(xlist, inodes, N)
+xc = TK.compute_center(xlist, inodes, N)
 if meth == 1
-    val, λus, λls = PWAR.infeasibility_certificate_LP(
+    val, λus, λls = TK.infeasibility_certificate_LP(
         nodes, inodes, ϵ, xc, N, solver
     )
 elseif meth == 2
-    val, bins = PWAR.infeasibility_certificate_MILP(
+    val, bins = TK.infeasibility_certificate_MILP(
         nodes, inodes, ϵ, xc, N, solver
     )
 elseif meth == 3
     μ = 0.01
-    val, bins = PWAR.infeasibility_certificate_MILP_prox(
+    val, bins = TK.infeasibility_certificate_MILP_prox(
         nodes, inodes, ϵ, xc, μ, N, solver
     )
 elseif meth == 4
     ρ = 0.2
-    val, bins = PWAR.infeasibility_certificate_MILP_radius(
+    val, bins = TK.infeasibility_certificate_MILP_radius(
         nodes, inodes, ϵ, xc, ρ, N, solver
     )
 end
@@ -69,12 +69,12 @@ display(val)
 if meth == 1
     θ = 0.5
     BD = 100
-    inodes_cert = PWAR.extract_infeasibility_certificate_LP(
+    inodes_cert = TK.extract_infeasibility_certificate_LP(
         nodes, inodes, λus, λls, ϵ, θ, BD, N, solver
     )
 elseif meth ∈ (2, 3, 4)
     θ = 0.5
-    inodes_cert = PWAR.extract_infeasibility_certificate_MILP(inodes, bins, θ)
+    inodes_cert = TK.extract_infeasibility_certificate_MILP(inodes, bins, θ)
 end
 for inode in inodes_cert
     node = nodes[inode]

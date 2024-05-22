@@ -6,8 +6,8 @@ using PyPlot
 
 Random.seed!(0)
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 include("./utils.jl")
 
@@ -21,7 +21,7 @@ colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 bbox_figs = ((1.7, 0.7), (5.2, 3.65))
 
 str = readlines(string(@__DIR__, "/exa_acrobot_data.txt"))
-NT = PWAR.Node{Vector{Float64},Float64}
+NT = TK.Node{Vector{Float64},Float64}
 nodes = NT[]
 for ln in str
     local ln = replace(ln, r"[\(\),]"=>"")
@@ -29,7 +29,7 @@ for ln in str
     @assert length(words) == 4
     local x = parse.(Float64, [words[1], words[2], "1"])
     local η = parse(Float64, words[3])
-    push!(nodes, PWAR.Node(x, η))
+    push!(nodes, TK.Node(x, η))
 end
 shuffle!(nodes)
 xlist = map(node -> node.x, nodes)
@@ -67,11 +67,11 @@ fig.savefig(
 BD = 1e5
 γ = 0.01
 δ = 1e-6
-inodes_list = @time PWAR.optimal_covering(
+inodes_list = @time TK.optimal_covering(
     nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 
-bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)
+bs = TK.optimal_set_cover(length(nodes), inodes_list, solver)
 inodes_list_opt = BitSet[]
 for (i, b) in enumerate(bs)
     if round(Int, b) == 1
@@ -87,7 +87,7 @@ nplot = 50
 for (q, inodes) in enumerate(inodes_list_opt)
     local a = minimax_regression(nodes, inodes, BD, 3, solver)
     # plot
-    local lb, ub = PWAR.compute_lims(xlist, inodes, 3)
+    local lb, ub = TK.compute_lims(xlist, inodes, 3)
     local x1rect = (lb[1], ub[1], ub[1], lb[1], lb[1])
     local x2rect = (lb[2], lb[2], ub[2], ub[2], lb[2])
     ax.plot(x1rect, x2rect, 0, c=colors[q])

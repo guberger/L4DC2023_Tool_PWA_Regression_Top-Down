@@ -6,8 +6,8 @@ using PyPlot
 
 Random.seed!(0)
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 include("./utils.jl")
 
@@ -22,7 +22,7 @@ solver_MILP() = Model(optimizer_with_attributes(
 colors = collect(keys(matplotlib.colors.TABLEAU_COLORS))
 
 str = readlines(string(@__DIR__, "/exa_acrobot_data.txt"))
-NT = PWAR.Node{Vector{Float64},Float64}
+NT = TK.Node{Vector{Float64},Float64}
 nodes = NT[]
 for ln in str
     local ln = replace(ln, r"[\(\),]"=>"")
@@ -30,7 +30,7 @@ for ln in str
     @assert length(words) == 4
     local x = parse.(Float64, [words[1], words[2], "1"])
     local η = parse(Float64, words[3])
-    push!(nodes, PWAR.Node(x, η))
+    push!(nodes, TK.Node(x, η))
 end
 shuffle!(nodes)
 # 50: 17 secs
@@ -48,7 +48,7 @@ BD = 1e5
 M = 9
 Γ = 2*κ*BD
 
-_optimal_covering(nodes) = PWAR.optimal_covering(
+_optimal_covering(nodes) = TK.optimal_covering(
     nodes, ϵ, BD, γ, δ, 3, solver, solver, solver
 )
 _switched_bounded_regression(nodes) = switched_bounded_regression(

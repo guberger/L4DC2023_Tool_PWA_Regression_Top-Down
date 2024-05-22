@@ -1,4 +1,4 @@
-module PWARegression
+module ToolKit
 
 using LinearAlgebra
 using JuMP

@@ -6,8 +6,8 @@ using PyPlot
 
 Random.seed!(0)
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 const GUROBI_ENV = Gurobi.Env()
 solver() = Model(optimizer_with_attributes(
@@ -16,12 +16,12 @@ solver() = Model(optimizer_with_attributes(
 
 ## Piecewise
 
-NT = PWAR.Node{Vector{Float64},Float64}
+NT = TK.Node{Vector{Float64},Float64}
 nodes = NT[]
 for xt in Iterators.product(-1:0.2:1, -2:0.4:2, (1.0,))
     local x = collect(xt)
     local η = abs(xt[1] + 0.5)
-    push!(nodes, PWAR.Node(x, η))
+    push!(nodes, TK.Node(x, η))
 end
 
 fig = figure()
@@ -51,19 +51,19 @@ inodes_all = BitSet(1:length(nodes))
 
 xc = [-0.01, -0.01, 1.0]
 
-obj, λus, λls = PWAR.infeasibility_certificate_LP(
+obj, λus, λls = TK.infeasibility_certificate_LP(
     nodes, inodes_all, ϵ*(1 + γ), xc, 3, solver
 )
 
-obj, bins = PWAR.infeasibility_certificate_MILP(
+obj, bins = TK.infeasibility_certificate_MILP(
     nodes, inodes_all, ϵ*(1 + γ), xc, 3, solver
 )
 
-inodes_cert_LP = PWAR.extract_infeasibility_certificate_LP(
+inodes_cert_LP = TK.extract_infeasibility_certificate_LP(
     nodes, inodes_all, λus, λls, ϵ, θ, BD, 3, solver
 )
 
-inodes_cert_MILP = PWAR.extract_infeasibility_certificate_MILP(
+inodes_cert_MILP = TK.extract_infeasibility_certificate_MILP(
     inodes_all, bins, θ
 )
 

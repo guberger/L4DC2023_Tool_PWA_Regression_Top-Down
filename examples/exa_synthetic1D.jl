@@ -6,8 +6,8 @@ using PyPlot
 
 Random.seed!(0)
 
-include("../src/PWARegression.jl")
-PWAR = PWARegression
+include("../src/main.jl")
+TK = ToolKit
 
 include("./utils.jl")
 
@@ -20,14 +20,14 @@ colors = ("tab:orange", "tab:green", "tab:purple")
 
 F(x) = atan(10*x)*exp(-abs(x))
 
-NT = PWAR.Node{Vector{Float64},Float64}
+NT = TK.Node{Vector{Float64},Float64}
 nodes = NT[]
-push!(nodes, PWAR.Node([0.0, 1.0], 0.0))
+push!(nodes, TK.Node([0.0, 1.0], 0.0))
 for xt in Iterators.product(0.2:0.2:1, (1.0,))
     for sg in (-1, 1)
         local x = collect(xt.*(sg, 1))
         local η = F(x[1])
-        push!(nodes, PWAR.Node(x, η))
+        push!(nodes, TK.Node(x, η))
     end
 end
 xlist = map(node -> node.x, nodes)
@@ -49,11 +49,11 @@ end
 BD = 100
 γ = 0.01
 δ = 1e-5
-inodes_list = PWAR.optimal_covering(
+inodes_list = TK.optimal_covering(
     nodes, ϵ, BD, γ, δ, 2, solver, solver, solver
 )
 
-bs = PWAR.optimal_set_cover(length(nodes), inodes_list, solver)
+bs = TK.optimal_set_cover(length(nodes), inodes_list, solver)
 inodes_list_opt = BitSet[]
 for (i, b) in enumerate(bs)
     if round(Int, b) == 1
@@ -64,7 +64,7 @@ end
 for (q, inodes) in enumerate(inodes_list_opt)
     local a = minimax_regression(nodes, inodes, BD, 2, solver)
     # plot
-    local lb, ub = PWAR.compute_lims(xlist, inodes, 2)
+    local lb, ub = TK.compute_lims(xlist, inodes, 2)
     local x1_ = (lb[1], ub[1])
     local Xt_ = Iterators.product(x1_)
     local X1_ = getindex.(Xt_, 1)
@@ -116,7 +116,7 @@ for (q, inodes) in enumerate(inodes_list_sw)
                 node.x[1], node.η, ls="none", marker=".", ms=15, c=colors[q]
         )
     end
-    local lb, ub = PWAR.compute_lims(xlist, inodes, 2)
+    local lb, ub = TK.compute_lims(xlist, inodes, 2)
     local x1_ = (lb[1], ub[1])
     local Xt_ = Iterators.product(x1_)
     local X1_ = getindex.(Xt_, 1)
