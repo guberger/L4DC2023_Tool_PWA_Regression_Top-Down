@@ -25,3 +25,4 @@ Manifest.toml
 
 examples/figures/
 examples/results/
+PARC/*.png
